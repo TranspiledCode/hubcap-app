@@ -223,6 +223,7 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 					strconv.Itoa(number), "--checkout", "--name", name); err != nil {
 					fmt.Println(err)
 					pause(reader)
+					break
 				}
 				return
 			}
