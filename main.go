@@ -160,7 +160,7 @@ func browseIssues(reader *bufio.Reader, state *AppState) string {
 
 		number, action := issueList(reader, state, issues)
 		switch action {
-		case "quit", "back":
+		case "quit":
 			return "quit"
 		case "switch":
 			return ""
@@ -393,19 +393,23 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 		printIssuesTable(issues)
 
 		fmt.Println()
-		input := prompt(reader, "Issue number to open, r to refresh, b to go back: ")
+		input := prompt(reader, "Issue number, n new, f filters, r refresh, q quit: ")
 		input = strings.TrimSpace(strings.ToLower(input))
 
 		switch input {
-		case "", "b", "back", "q", "quit":
-			return 0, "back"
+		case "", "q", "quit", "b", "back":
+			return 0, "quit"
 		case "r", "refresh":
 			return 0, "refresh"
+		case "n", "new":
+			return 0, "new"
+		case "f", "filters":
+			return 0, "filters"
 		}
 
 		number, err := strconv.Atoi(input)
 		if err != nil {
-			return 0, "back"
+			return 0, "quit"
 		}
 
 		return number, "open"
@@ -418,18 +422,19 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 		renderHeader(state, true)
 		fmt.Print("\033[?25l")
 
-		fmt.Printf("  %-7s %-58s %-22s %-34s\r\n", "NUMBER", "TITLE", "ASSIGNEE", "LABELS")
-		fmt.Printf("  %-7s %-58s %-22s %-34s\r\n", "------", "-----", "--------", "------")
+		fmt.Printf("  %-9s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
+		fmt.Printf("  %-9s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
 
 		for index, issue := range issues {
 			prefix := "  "
 			if index == selected {
 				prefix = "> "
 			}
-
+			indicator := stateIndicator(issue.State, false)
 			fmt.Printf(
-				"%s%-7d %-58s %-22s %-34s\r\n",
+				"%s%s %-6d %-58s %-22s %-34s\r\n",
 				prefix,
+				indicator,
 				issue.Number,
 				truncate(cleanLine(issue.Title), 58),
 				truncate(joinUsers(issue.Assignees), 22),
@@ -438,7 +443,7 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 		}
 
 		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter open • r refresh • q back • 1-9 jump\r\n")
+		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
 	}
 
 	render()
@@ -454,14 +459,33 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 		key := string(buffer[:n])
 
 		switch key {
+		case "\t", "\x1b[Z": // Tab / Shift+Tab — switch active tab
+			state.IssueSelected = selected
+			if state.ActiveTab == TabIssues {
+				state.ActiveTab = TabPRs
+			} else {
+				state.ActiveTab = TabIssues
+			}
+			fmt.Print("\033[?25h\r\n")
+			return 0, "switch"
+		case "n", "N":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "new"
+		case "f", "F":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "filters"
 		case "\r", "\n":
+			state.IssueSelected = selected
 			fmt.Print("\033[?25h")
 			fmt.Print("\r\n")
 			return issues[selected].Number, "open"
 		case "q", "Q", "b", "B", "\x03", "\x1b":
+			state.IssueSelected = selected
 			fmt.Print("\033[?25h")
 			fmt.Print("\r\n")
-			return 0, "back"
+			return 0, "quit"
 		case "r", "R":
 			fmt.Print("\033[?25h")
 			fmt.Print("\r\n")
