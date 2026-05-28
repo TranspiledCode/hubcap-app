@@ -422,8 +422,8 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 		renderHeader(state, true)
 		fmt.Print("\033[?25l")
 
-		fmt.Printf("  %-9s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
-		fmt.Printf("  %-9s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
+		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
+		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
 
 		for index, issue := range issues {
 			prefix := "  "
@@ -453,7 +453,7 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 	for {
 		n, err := os.Stdin.Read(buffer)
 		if err != nil || n == 0 {
-			return 0, "back"
+			return 0, "quit"
 		}
 
 		key := string(buffer[:n])
