@@ -14,6 +14,18 @@ import (
 	"text/tabwriter"
 )
 
+// ── ANSI Colors ───────────────────────────────────────────────────────────────
+
+const (
+	colorReset  = "\033[0m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorRed    = "\033[31m"
+	colorPurple = "\033[35m"
+	colorGray   = "\033[90m"
+	colorInvert = "\033[7m"
+)
+
 type Issue struct {
 	Number    int       `json:"number"`
 	Title     string    `json:"title"`
@@ -35,10 +47,59 @@ type Label struct {
 }
 
 type Filters struct {
-	State    string
-	Assignee string
-	Label    string
-	Limit    int
+	State     string
+	Assignee  string
+	Label     string
+	Milestone string
+	Limit     int
+}
+
+// ── New Types ─────────────────────────────────────────────────────────────────
+
+type TabID int
+
+const (
+	TabIssues TabID = iota
+	TabPRs
+)
+
+type PRFilters struct {
+	State        string // "open", "closed", "merged", "all"
+	Assignee     string
+	Label        string
+	Draft        string // "true" = draft only, "false" = non-draft only, "" = all
+	ReviewStatus string // "", "none", "required", "approved", "changes-requested"
+	Limit        int
+}
+
+type CheckRun struct {
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+type PullRequest struct {
+	Number         int        `json:"number"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	State          string     `json:"state"`
+	IsDraft        bool       `json:"isDraft"`
+	Author         User       `json:"author"`
+	Assignees      []User     `json:"assignees"`
+	Labels         []Label    `json:"labels"`
+	HeadRefName    string     `json:"headRefName"`
+	ReviewDecision string     `json:"reviewDecision"`
+	StatusRollup   []CheckRun `json:"statusCheckRollup"`
+	URL            string     `json:"url"`
+	CreatedAt      string     `json:"createdAt"`
+}
+
+type AppState struct {
+	ActiveTab     TabID
+	IssueFilters  Filters
+	PRFilters     PRFilters
+	IssueSelected int
+	PRSelected    int
+	Repo          string
 }
 
 func main() {
@@ -695,4 +756,64 @@ func truncate(value string, max int) string {
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+// ── String/Display Utilities ──────────────────────────────────────────────────
+
+func deriveBranchName(number int, title string) string {
+	title = strings.ToLower(title)
+	var sb strings.Builder
+	for _, r := range title {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune('-')
+		}
+	}
+	slug := sb.String()
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	prefix := fmt.Sprintf("%d-", number)
+	full := prefix + slug
+	if len(full) > 45 {
+		full = full[:45]
+		full = strings.TrimRight(full, "-")
+	}
+	return full
+}
+
+func summarizeChecks(checks []CheckRun) string {
+	if len(checks) == 0 {
+		return "—"
+	}
+	pending := false
+	for _, c := range checks {
+		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
+			return colorRed + "✗" + colorReset
+		}
+		if c.Status != "COMPLETED" {
+			pending = true
+		}
+	}
+	if pending {
+		return colorYellow + "…" + colorReset
+	}
+	return colorGreen + "✓" + colorReset
+}
+
+func stateIndicator(state string, isDraft bool) string {
+	switch {
+	case isDraft:
+		return colorYellow + "◐" + colorReset
+	case strings.EqualFold(state, "merged"):
+		return colorPurple + "✓" + colorReset
+	case strings.EqualFold(state, "closed"):
+		return colorRed + "✗" + colorReset
+	case strings.EqualFold(state, "open"):
+		return colorGreen + "●" + colorReset
+	default:
+		return colorGray + "○" + colorReset
+	}
 }
