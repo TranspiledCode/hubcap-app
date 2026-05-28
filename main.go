@@ -320,11 +320,185 @@ func prList(reader *bufio.Reader, state *AppState, prs []PullRequest) (int, stri
 	}
 }
 
+func printPRDetail(pr PullRequest) {
+	sep := strings.Repeat("=", 80)
+	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
+	fmt.Println(sep)
+
+	// State with color
+	stateColor := colorGreen
+	switch {
+	case pr.IsDraft:
+		stateColor = colorYellow
+	case pr.State == "merged":
+		stateColor = colorPurple
+	case pr.State == "closed":
+		stateColor = colorRed
+	}
+	stateStr := pr.State
+	if pr.IsDraft {
+		stateStr = "draft"
+	}
+
+	fmt.Printf("%-12s %s%s%s\n", "State:", stateColor, stateStr, colorReset)
+	fmt.Printf("%-12s %s\n", "Author:", pr.Author.Login)
+	fmt.Printf("%-12s %s\n", "Branch:", pr.HeadRefName)
+
+	createdDate := pr.CreatedAt
+	if len(pr.CreatedAt) >= 10 {
+		createdDate = pr.CreatedAt[:10]
+	}
+	fmt.Printf("%-12s %s\n", "Created:", createdDate)
+
+	// Assignees
+	assigneeStr := "—"
+	if len(pr.Assignees) > 0 {
+		logins := make([]string, len(pr.Assignees))
+		for i, a := range pr.Assignees {
+			logins[i] = a.Login
+		}
+		assigneeStr = strings.Join(logins, ", ")
+	}
+	fmt.Printf("%-12s %s\n", "Assignees:", assigneeStr)
+
+	// Review decision with color
+	reviewColor := colorYellow
+	switch pr.ReviewDecision {
+	case "APPROVED":
+		reviewColor = colorGreen
+	case "CHANGES_REQUESTED":
+		reviewColor = colorRed
+	}
+	reviewStr := pr.ReviewDecision
+	if reviewStr == "" {
+		reviewStr = "—"
+		reviewColor = colorReset
+	}
+	fmt.Printf("%-12s %s%s%s\n", "Review:", reviewColor, reviewStr, colorReset)
+
+	// Checks
+	checksStr := summarizeChecks(pr.StatusRollup)
+	fmt.Printf("%-12s %s\n", "Checks:", checksStr)
+
+	// Labels
+	labelStr := "—"
+	if len(pr.Labels) > 0 {
+		names := make([]string, len(pr.Labels))
+		for i, l := range pr.Labels {
+			names[i] = l.Name
+		}
+		labelStr = strings.Join(names, ", ")
+	}
+	fmt.Printf("%-12s %s\n", "Labels:", labelStr)
+	fmt.Printf("%-12s %s\n", "URL:", pr.URL)
+	fmt.Println(sep)
+
+	if pr.Body != "" {
+		fmt.Println()
+		fmt.Println(pr.Body)
+	}
+	fmt.Println()
+}
+
 func viewPR(reader *bufio.Reader, state *AppState, number int) {
-	clearScreen()
-	renderHeader(state, false)
-	fmt.Printf("PR #%d detail — coming in Task 9\n", number)
-	pause(reader)
+	for {
+		pr, err := fetchPR(number)
+		if err != nil {
+			clearScreen()
+			renderHeader(state, false)
+			fmt.Println("Error fetching PR:", err)
+			pause(reader)
+			return
+		}
+		clearScreen()
+		renderHeader(state, false)
+		printPRDetail(pr)
+
+		// Build menu
+		closeLabel := "Close PR"
+		if pr.State == "closed" {
+			closeLabel = "Reopen PR"
+		}
+
+		choice := menu(reader, []string{
+			"Checkout branch",
+			"Merge",
+			closeLabel,
+			"Open in browser",
+			"Copy URL",
+			"Refresh",
+			"Back",
+		})
+
+		switch choice {
+		case "Checkout branch":
+			clearScreen()
+			renderHeader(state, false)
+			runCommandPassthrough("gh", "pr", "checkout", strconv.Itoa(number))
+			return
+		case "Merge":
+			mergeChoice := menu(reader, []string{
+				"Merge commit",
+				"Squash and merge",
+				"Rebase and merge",
+				"Cancel",
+			})
+			switch mergeChoice {
+			case "Merge commit":
+				clearScreen()
+				renderHeader(state, false)
+				runCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--merge")
+				return
+			case "Squash and merge":
+				clearScreen()
+				renderHeader(state, false)
+				runCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--squash")
+				return
+			case "Rebase and merge":
+				clearScreen()
+				renderHeader(state, false)
+				runCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--rebase")
+				return
+			case "Cancel", "":
+				continue // re-render detail
+			}
+		case "Close PR":
+			if err := closePR(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("PR closed.")
+			}
+			pause(reader)
+			continue
+		case "Reopen PR":
+			if err := reopenPR(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("PR reopened.")
+			}
+			pause(reader)
+			continue
+		case "Open in browser":
+			if err := runCommandPassthrough("gh", "pr", "view", strconv.Itoa(number), "--web"); err != nil {
+				fmt.Println(err)
+				pause(reader)
+			}
+			continue
+		case "Copy URL":
+			if err := copyText(pr.URL); err != nil {
+				fmt.Println("Could not copy URL. Here it is:")
+				fmt.Println(pr.URL)
+			} else {
+				fmt.Println("Copied PR URL.")
+			}
+			pause(reader)
+			continue
+		case "Refresh":
+			continue
+		case "Back", "":
+			return
+		}
+	}
 }
 
 func configurePRFilters(reader *bufio.Reader, state *AppState) PRFilters {
