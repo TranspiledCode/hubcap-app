@@ -14,8 +14,6 @@ import (
 	"text/tabwriter"
 )
 
-// ── ANSI Colors ───────────────────────────────────────────────────────────────
-
 const (
 	colorReset  = "\033[0m"
 	colorGreen  = "\033[32m"
@@ -26,16 +24,25 @@ const (
 	colorInvert = "\033[7m"
 )
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type TabID int
+
+const (
+	TabIssues TabID = iota
+	TabPRs
+)
+
 type Issue struct {
-	Number    int       `json:"number"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	URL       string    `json:"url"`
-	State     string    `json:"state"`
-	Author    User      `json:"author"`
-	Assignees []User    `json:"assignees"`
-	Labels    []Label   `json:"labels"`
-	CreatedAt string    `json:"createdAt"`
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	URL       string `json:"url"`
+	State     string `json:"state"`
+	Author    User   `json:"author"`
+	Assignees []User `json:"assignees"`
+	Labels    []Label `json:"labels"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type User struct {
@@ -53,15 +60,6 @@ type Filters struct {
 	Milestone string
 	Limit     int
 }
-
-// ── New Types ─────────────────────────────────────────────────────────────────
-
-type TabID int
-
-const (
-	TabIssues TabID = iota
-	TabPRs
-)
 
 type PRFilters struct {
 	State        string // "open", "closed", "merged", "all"
@@ -93,6 +91,8 @@ type PullRequest struct {
 	CreatedAt      string     `json:"createdAt"`
 }
 
+// ── App State ────────────────────────────────────────────────────────────────
+
 type AppState struct {
 	ActiveTab     TabID
 	IssueFilters  Filters
@@ -101,6 +101,8 @@ type AppState struct {
 	PRSelected    int
 	Repo          string
 }
+
+// ── Main / Tab Loop ──────────────────────────────────────────────────────────
 
 func main() {
 	if err := require("gh"); err != nil {
@@ -128,6 +130,396 @@ func main() {
 			return
 		}
 	}
+}
+
+// ── Issues Tab ───────────────────────────────────────────────────────────────
+
+func browseIssues(reader *bufio.Reader, state *AppState) string {
+	for {
+		clearScreen()
+		renderHeader(state, false)
+		fmt.Println("Fetching issues...")
+
+		issues, err := fetchIssues(state.IssueFilters)
+		if err != nil {
+			fmt.Println("\nCould not fetch issues:")
+			fmt.Println(err)
+			pause(reader)
+			return ""
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("\nNo issues found with the current filters.")
+			pause(reader)
+			return ""
+		}
+
+		number, action := issueList(reader, state, issues)
+		switch action {
+		case "quit":
+			return "quit"
+		case "switch":
+			return ""
+		case "refresh":
+			continue
+		case "filters":
+			state.IssueFilters = configureFilters(reader, state)
+		case "new":
+			clearScreen()
+			renderHeader(state, false)
+			runCommandPassthrough("gh", "issue", "create")
+		case "open":
+			viewIssue(reader, state, number)
+		}
+	}
+}
+
+func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, string) {
+	if len(issues) == 0 {
+		return 0, "back"
+	}
+
+	selected := state.IssueSelected
+	if selected >= len(issues) {
+		selected = 0
+	}
+
+	if err := enableRawMode(); err != nil {
+		clearScreen()
+		renderHeader(state, false)
+		printIssuesTable(issues)
+
+		fmt.Println()
+		input := prompt(reader, "Issue number, n new, f filters, r refresh, q quit: ")
+		input = strings.TrimSpace(strings.ToLower(input))
+
+		switch input {
+		case "", "q", "quit", "b", "back":
+			return 0, "quit"
+		case "r", "refresh":
+			return 0, "refresh"
+		case "n", "new":
+			return 0, "new"
+		case "f", "filters":
+			return 0, "filters"
+		}
+
+		number, err := strconv.Atoi(input)
+		if err != nil {
+			return 0, "quit"
+		}
+
+		return number, "open"
+	}
+	defer disableRawMode()
+	defer fmt.Print("\033[?25h")
+
+	render := func() {
+		clearScreen()
+		renderHeader(state, true)
+		fmt.Print("\033[?25l")
+
+		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
+		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
+
+		for index, issue := range issues {
+			prefix := "  "
+			if index == selected {
+				prefix = "> "
+			}
+			indicator := stateIndicator(issue.State, false)
+			fmt.Printf(
+				"%s%s %-6d %-58s %-22s %-34s\r\n",
+				prefix,
+				indicator,
+				issue.Number,
+				truncate(cleanLine(issue.Title), 58),
+				truncate(joinUsers(issue.Assignees), 22),
+				truncate(joinLabels(issue.Labels), 34),
+			)
+		}
+
+		fmt.Print("\r\n")
+		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
+	}
+
+	render()
+
+	buffer := make([]byte, 3)
+
+	for {
+		n, err := os.Stdin.Read(buffer)
+		if err != nil || n == 0 {
+			return 0, "quit"
+		}
+
+		key := string(buffer[:n])
+
+		switch key {
+		case "\t", "\x1b[Z": // Tab / Shift+Tab — switch active tab
+			state.IssueSelected = selected
+			if state.ActiveTab == TabIssues {
+				state.ActiveTab = TabPRs
+			} else {
+				state.ActiveTab = TabIssues
+			}
+			fmt.Print("\033[?25h\r\n")
+			return 0, "switch"
+		case "n", "N":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "new"
+		case "f", "F":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "filters"
+		case "\r", "\n":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return issues[selected].Number, "open"
+		case "q", "Q", "b", "B", "\x03", "\x1b":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return 0, "quit"
+		case "r", "R":
+			state.IssueSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return 0, "refresh"
+		case "\x1b[A":
+			selected--
+			if selected < 0 {
+				selected = len(issues) - 1
+			}
+			render()
+		case "\x1b[B":
+			selected++
+			if selected >= len(issues) {
+				selected = 0
+			}
+			render()
+		default:
+			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+				index := int(key[0] - '1')
+				if index >= 0 && index < len(issues) {
+					selected = index
+					render()
+				}
+			}
+		}
+	}
+}
+
+func printIssueDetail(issue Issue) {
+	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Printf("State:     %s\n", issue.State)
+	fmt.Printf("Author:    %s\n", issue.Author.Login)
+	fmt.Printf("Created:   %s\n", strings.TrimSuffix(strings.Split(issue.CreatedAt, "T")[0], "Z"))
+	fmt.Printf("Assignees: %s\n", joinUsers(issue.Assignees))
+	fmt.Printf("Labels:    %s\n", joinLabels(issue.Labels))
+	fmt.Printf("URL:       %s\n", issue.URL)
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println()
+
+	body := strings.TrimSpace(issue.Body)
+	if body == "" {
+		body = "No description provided."
+	}
+
+	fmt.Println(body)
+	fmt.Println()
+}
+
+func viewIssue(reader *bufio.Reader, state *AppState, number int) {
+	for {
+		clearScreen()
+		renderHeader(state, false)
+		issue, err := fetchIssue(number)
+		if err != nil {
+			fmt.Println("Could not fetch issue:")
+			fmt.Println(err)
+			pause(reader)
+			return
+		}
+
+		printIssueDetail(issue)
+
+		closeLabel := "Close issue"
+		if strings.EqualFold(issue.State, "closed") {
+			closeLabel = "Reopen issue"
+		}
+
+		choice := menu(reader, []string{
+			"Develop branch",
+			"Create PR",
+			closeLabel,
+			"Assign to @me",
+			"Add label",
+			"Open in browser",
+			"Copy URL",
+			"Refresh",
+			"Back",
+		})
+
+		switch choice {
+		case "Develop branch":
+			clearScreen()
+			defaultName := deriveBranchName(issue.Number, issue.Title)
+			for {
+				name, ok := promptBranchName(reader, defaultName)
+				if !ok {
+					pause(reader)
+					continue
+				}
+				if err := runCommandPassthrough("gh", "issue", "develop",
+					strconv.Itoa(number), "--checkout", "--name", name); err != nil {
+					fmt.Println(err)
+					pause(reader)
+					break
+				}
+				return
+			}
+		case "Create PR":
+			clearScreen()
+			renderHeader(state, false)
+			if err := runCommandPassthrough("gh", "pr", "create", "--fill"); err != nil {
+				fmt.Println(err)
+				pause(reader)
+			}
+			return
+		case "Close issue":
+			if err := closeIssue(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Issue closed.")
+			}
+			pause(reader)
+			continue
+		case "Reopen issue":
+			if err := reopenIssue(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Issue reopened.")
+			}
+			pause(reader)
+			continue
+		case "Assign to @me":
+			if err := assignIssueSelf(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Assigned to @me.")
+			}
+			pause(reader)
+			continue
+		case "Add label":
+			clearScreen()
+			label := strings.TrimSpace(prompt(reader, "Label name: "))
+			if label != "" {
+				if err := addIssueLabel(number, label); err != nil {
+					fmt.Println(err)
+				} else {
+					fmt.Printf("Label %q added.\n", label)
+				}
+				pause(reader)
+			}
+			continue
+		case "Open in browser":
+			if err := runCommandPassthrough("gh", "issue", "view", strconv.Itoa(number), "--web"); err != nil {
+				fmt.Println(err)
+				pause(reader)
+			}
+		case "Copy URL":
+			if err := copyText(issue.URL); err != nil {
+				fmt.Println("Could not copy URL. Here it is:")
+				fmt.Println(issue.URL)
+			} else {
+				fmt.Println("Copied issue URL.")
+			}
+			pause(reader)
+		case "Refresh":
+			continue
+		case "Back", "":
+			return
+		}
+	}
+}
+
+func configureFilters(reader *bufio.Reader, state *AppState) Filters {
+	filters := state.IssueFilters
+	for {
+		clearScreen()
+		renderHeader(state, false)
+
+		choice := menu(reader, []string{
+			"Change state",
+			"Change assignee",
+			"Change label",
+			"Change milestone",
+			"Change limit",
+			"Clear filters",
+			"Back",
+		})
+
+		switch choice {
+		case "Change state":
+			s := menu(reader, []string{"open", "closed", "all", "Back"})
+			if s != "" && s != "Back" {
+				filters.State = s
+			}
+		case "Change assignee":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, @me, or blank for any: "))
+		case "Change label":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
+		case "Change milestone":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Milestone = strings.TrimSpace(prompt(reader, "Milestone title, or blank for any: "))
+		case "Change limit":
+			clearScreen()
+			renderHeader(state, false)
+			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
+			if value == "" {
+				continue
+			}
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 {
+				fmt.Println("Limit must be a positive number.")
+				pause(reader)
+				continue
+			}
+			filters.Limit = limit
+		case "Clear filters":
+			filters = Filters{State: "open", Limit: 50}
+		case "Back", "":
+			return filters
+		}
+	}
+}
+
+func printIssuesTable(issues []Issue) {
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, "NUMBER\tTITLE\tASSIGNEE\tLABELS")
+	fmt.Fprintln(writer, "------\t-----\t--------\t------")
+
+	for _, issue := range issues {
+		fmt.Fprintf(
+			writer,
+			"%d\t%s\t%s\t%s\n",
+			issue.Number,
+			truncate(cleanLine(issue.Title), 58),
+			truncate(joinUsers(issue.Assignees), 22),
+			truncate(joinLabels(issue.Labels), 34),
+		)
+	}
+
+	writer.Flush()
 }
 
 // ── Pull Requests Tab ────────────────────────────────────────────────────────
@@ -325,7 +717,6 @@ func printPRDetail(pr PullRequest) {
 	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
 	fmt.Println(sep)
 
-	// State with color
 	stateColor := colorGreen
 	switch {
 	case pr.IsDraft:
@@ -350,7 +741,6 @@ func printPRDetail(pr PullRequest) {
 	}
 	fmt.Printf("%-12s %s\n", "Created:", createdDate)
 
-	// Assignees
 	assigneeStr := "—"
 	if len(pr.Assignees) > 0 {
 		logins := make([]string, len(pr.Assignees))
@@ -361,7 +751,6 @@ func printPRDetail(pr PullRequest) {
 	}
 	fmt.Printf("%-12s %s\n", "Assignees:", assigneeStr)
 
-	// Review decision with color
 	reviewColor := colorYellow
 	switch pr.ReviewDecision {
 	case "APPROVED":
@@ -375,11 +764,9 @@ func printPRDetail(pr PullRequest) {
 	}
 	fmt.Printf("%-12s %s%s%s\n", "Review:", reviewColor, reviewStr, colorReset)
 
-	// Checks
 	checksStr := summarizeChecks(pr.StatusRollup)
 	fmt.Printf("%-12s %s\n", "Checks:", checksStr)
 
-	// Labels
 	labelStr := "—"
 	if len(pr.Labels) > 0 {
 		names := make([]string, len(pr.Labels))
@@ -411,7 +798,6 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 		}
 		printPRDetail(pr)
 
-		// Build menu
 		closeLabel := "Close PR"
 		if pr.State == "closed" {
 			closeLabel = "Reopen PR"
@@ -565,215 +951,139 @@ func configurePRFilters(reader *bufio.Reader, state *AppState) PRFilters {
 	}
 }
 
-func browseIssues(reader *bufio.Reader, state *AppState) string {
+// ── Shared UI Primitives ─────────────────────────────────────────────────────
+
+func menu(reader *bufio.Reader, options []string) string {
+	if len(options) == 0 {
+		return ""
+	}
+
+	selected := 0
+
+	if err := enableRawMode(); err != nil {
+		return numberedMenu(reader, options)
+	}
+	defer disableRawMode()
+
+	renderMenu := func() {
+		fmt.Print("\033[?25l")
+		fmt.Print("\033[s")
+
+		for index, option := range options {
+			prefix := "  "
+			if index == selected {
+				prefix = "> "
+			}
+
+			fmt.Printf("%s%s\033[K\r\n", prefix, option)
+		}
+
+		fmt.Print("\r\n")
+		fmt.Print("↑/↓ navigate • enter submit • 1-9 jump • q quit/back\033[K")
+		fmt.Print("\033[u")
+	}
+
+	renderMenu()
+	defer fmt.Print("\033[?25h")
+
+	buffer := make([]byte, 3)
+
 	for {
-		clearScreen()
-		renderHeader(state, false)
-		fmt.Println("Fetching issues...")
-
-		issues, err := fetchIssues(state.IssueFilters)
-		if err != nil {
-			fmt.Println("\nCould not fetch issues:")
-			fmt.Println(err)
-			pause(reader)
+		n, err := os.Stdin.Read(buffer)
+		if err != nil || n == 0 {
 			return ""
 		}
 
-		if len(issues) == 0 {
-			fmt.Println("\nNo issues found with the current filters.")
-			pause(reader)
-			return ""
-		}
+		key := string(buffer[:n])
 
-		number, action := issueList(reader, state, issues)
-		switch action {
-		case "quit":
-			return "quit"
-		case "switch":
+		switch key {
+		case "\r", "\n":
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return options[selected]
+		case "q", "Q", "\x03", "\x1b":
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
 			return ""
-		case "refresh":
-			continue
-		case "filters":
-			state.IssueFilters = configureFilters(reader, state)
-		case "new":
-			clearScreen()
-			renderHeader(state, false)
-			runCommandPassthrough("gh", "issue", "create")
-		case "open":
-			viewIssue(reader, state, number)
+		case "\x1b[A":
+			selected--
+			if selected < 0 {
+				selected = len(options) - 1
+			}
+			renderMenu()
+		case "\x1b[B":
+			selected++
+			if selected >= len(options) {
+				selected = 0
+			}
+			renderMenu()
+		default:
+			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+				index := int(key[0] - '1')
+				if index >= 0 && index < len(options) {
+					selected = index
+					renderMenu()
+				}
+			}
 		}
 	}
 }
 
-func viewIssue(reader *bufio.Reader, state *AppState, number int) {
+func numberedMenu(reader *bufio.Reader, options []string) string {
+	for index, option := range options {
+		fmt.Printf("%d) %s\n", index+1, option)
+	}
+
 	for {
-		clearScreen()
-		renderHeader(state, false)
-		issue, err := fetchIssue(number)
-		if err != nil {
-			fmt.Println("Could not fetch issue:")
-			fmt.Println(err)
-			pause(reader)
-			return
+		input := strings.TrimSpace(prompt(reader, "Choose: "))
+		if input == "" {
+			return ""
 		}
 
-		printIssueDetail(issue)
-
-		closeLabel := "Close issue"
-		if strings.EqualFold(issue.State, "closed") {
-			closeLabel = "Reopen issue"
+		number, err := strconv.Atoi(input)
+		if err != nil || number < 1 || number > len(options) {
+			fmt.Println("Enter a number from the menu.")
+			continue
 		}
 
-		choice := menu(reader, []string{
-			"Develop branch",
-			"Create PR",
-			closeLabel,
-			"Assign to @me",
-			"Add label",
-			"Open in browser",
-			"Copy URL",
-			"Refresh",
-			"Back",
-		})
-
-		switch choice {
-		case "Develop branch":
-			clearScreen()
-			defaultName := deriveBranchName(issue.Number, issue.Title)
-			for {
-				name, ok := promptBranchName(reader, defaultName)
-				if !ok {
-					pause(reader)
-					continue
-				}
-				if err := runCommandPassthrough("gh", "issue", "develop",
-					strconv.Itoa(number), "--checkout", "--name", name); err != nil {
-					fmt.Println(err)
-					pause(reader)
-					break
-				}
-				return
-			}
-		case "Create PR":
-			clearScreen()
-			renderHeader(state, false)
-			if err := runCommandPassthrough("gh", "pr", "create", "--fill"); err != nil {
-				fmt.Println(err)
-				pause(reader)
-			}
-			return
-		case "Close issue":
-			if err := closeIssue(number); err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println("Issue closed.")
-			}
-			pause(reader)
-			continue
-		case "Reopen issue":
-			if err := reopenIssue(number); err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println("Issue reopened.")
-			}
-			pause(reader)
-			continue
-		case "Assign to @me":
-			if err := assignIssueSelf(number); err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println("Assigned to @me.")
-			}
-			pause(reader)
-			continue
-		case "Add label":
-			clearScreen()
-			label := strings.TrimSpace(prompt(reader, "Label name: "))
-			if label != "" {
-				if err := addIssueLabel(number, label); err != nil {
-					fmt.Println(err)
-				} else {
-					fmt.Printf("Label %q added.\n", label)
-				}
-				pause(reader)
-			}
-			continue
-		case "Open in browser":
-			if err := runCommandPassthrough("gh", "issue", "view", strconv.Itoa(number), "--web"); err != nil {
-				fmt.Println(err)
-				pause(reader)
-			}
-		case "Copy URL":
-			if err := copyText(issue.URL); err != nil {
-				fmt.Println("Could not copy URL. Here it is:")
-				fmt.Println(issue.URL)
-			} else {
-				fmt.Println("Copied issue URL.")
-			}
-			pause(reader)
-		case "Refresh":
-			continue
-		case "Back", "":
-			return
-		}
+		return options[number-1]
 	}
 }
 
-func configureFilters(reader *bufio.Reader, state *AppState) Filters {
-	filters := state.IssueFilters
-	for {
-		clearScreen()
-		renderHeader(state, false)
-
-		choice := menu(reader, []string{
-			"Change state",
-			"Change assignee",
-			"Change label",
-			"Change milestone",
-			"Change limit",
-			"Clear filters",
-			"Back",
-		})
-
-		switch choice {
-		case "Change state":
-			s := menu(reader, []string{"open", "closed", "all", "Back"})
-			if s != "" && s != "Back" {
-				filters.State = s
-			}
-		case "Change assignee":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, @me, or blank for any: "))
-		case "Change label":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
-		case "Change milestone":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Milestone = strings.TrimSpace(prompt(reader, "Milestone title, or blank for any: "))
-		case "Change limit":
-			clearScreen()
-			renderHeader(state, false)
-			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
-			if value == "" {
-				continue
-			}
-			limit, err := strconv.Atoi(value)
-			if err != nil || limit <= 0 {
-				fmt.Println("Limit must be a positive number.")
-				pause(reader)
-				continue
-			}
-			filters.Limit = limit
-		case "Clear filters":
-			filters = Filters{State: "open", Limit: 50}
-		case "Back", "":
-			return filters
-		}
+func renderHeader(state *AppState, rawMode bool) {
+	nl := "\n"
+	if rawMode {
+		nl = "\r\n"
 	}
+	sep := strings.Repeat("=", 52)
+
+	issuesLabel := "  1: Issues  "
+	prsLabel := "  2: Pull Requests  "
+	if state.ActiveTab == TabIssues {
+		issuesLabel = colorInvert + issuesLabel + colorReset
+	} else {
+		prsLabel = colorInvert + prsLabel + colorReset
+	}
+
+	fmt.Printf("GitHub TUI — %s%s", state.Repo, nl)
+	fmt.Printf("%s%s", sep, nl)
+	fmt.Printf("%s%s%s", issuesLabel, prsLabel, nl)
+	fmt.Printf("%s%s", sep, nl)
+
+	if state.ActiveTab == TabIssues {
+		f := state.IssueFilters
+		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
+			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+	} else {
+		f := state.PRFilters
+		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
+			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+	}
+	fmt.Printf("%s%s", sep, nl)
+	fmt.Print(nl)
 }
+
+// ── gh Commands ──────────────────────────────────────────────────────────────
 
 func fetchIssues(filters Filters) ([]Issue, error) {
 	args := []string{
@@ -919,280 +1229,7 @@ func reopenPR(number int) error {
 	return runCommandPassthrough("gh", "pr", "reopen", strconv.Itoa(number))
 }
 
-func printIssuesTable(issues []Issue) {
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "NUMBER\tTITLE\tASSIGNEE\tLABELS")
-	fmt.Fprintln(writer, "------\t-----\t--------\t------")
-
-	for _, issue := range issues {
-		fmt.Fprintf(
-			writer,
-			"%d\t%s\t%s\t%s\n",
-			issue.Number,
-			truncate(cleanLine(issue.Title), 58),
-			truncate(joinUsers(issue.Assignees), 22),
-			truncate(joinLabels(issue.Labels), 34),
-		)
-	}
-
-	writer.Flush()
-}
-
-func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, string) {
-	if len(issues) == 0 {
-		return 0, "back"
-	}
-
-	selected := state.IssueSelected
-	if selected >= len(issues) {
-		selected = 0
-	}
-
-	if err := enableRawMode(); err != nil {
-		clearScreen()
-		renderHeader(state, false)
-		printIssuesTable(issues)
-
-		fmt.Println()
-		input := prompt(reader, "Issue number, n new, f filters, r refresh, q quit: ")
-		input = strings.TrimSpace(strings.ToLower(input))
-
-		switch input {
-		case "", "q", "quit", "b", "back":
-			return 0, "quit"
-		case "r", "refresh":
-			return 0, "refresh"
-		case "n", "new":
-			return 0, "new"
-		case "f", "filters":
-			return 0, "filters"
-		}
-
-		number, err := strconv.Atoi(input)
-		if err != nil {
-			return 0, "quit"
-		}
-
-		return number, "open"
-	}
-	defer disableRawMode()
-	defer fmt.Print("\033[?25h")
-
-	render := func() {
-		clearScreen()
-		renderHeader(state, true)
-		fmt.Print("\033[?25l")
-
-		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
-		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
-
-		for index, issue := range issues {
-			prefix := "  "
-			if index == selected {
-				prefix = "> "
-			}
-			indicator := stateIndicator(issue.State, false)
-			fmt.Printf(
-				"%s%s %-6d %-58s %-22s %-34s\r\n",
-				prefix,
-				indicator,
-				issue.Number,
-				truncate(cleanLine(issue.Title), 58),
-				truncate(joinUsers(issue.Assignees), 22),
-				truncate(joinLabels(issue.Labels), 34),
-			)
-		}
-
-		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
-	}
-
-	render()
-
-	buffer := make([]byte, 3)
-
-	for {
-		n, err := os.Stdin.Read(buffer)
-		if err != nil || n == 0 {
-			return 0, "quit"
-		}
-
-		key := string(buffer[:n])
-
-		switch key {
-		case "\t", "\x1b[Z": // Tab / Shift+Tab — switch active tab
-			state.IssueSelected = selected
-			if state.ActiveTab == TabIssues {
-				state.ActiveTab = TabPRs
-			} else {
-				state.ActiveTab = TabIssues
-			}
-			fmt.Print("\033[?25h\r\n")
-			return 0, "switch"
-		case "n", "N":
-			state.IssueSelected = selected
-			fmt.Print("\033[?25h\r\n")
-			return 0, "new"
-		case "f", "F":
-			state.IssueSelected = selected
-			fmt.Print("\033[?25h\r\n")
-			return 0, "filters"
-		case "\r", "\n":
-			state.IssueSelected = selected
-			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
-			return issues[selected].Number, "open"
-		case "q", "Q", "b", "B", "\x03", "\x1b":
-			state.IssueSelected = selected
-			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
-			return 0, "quit"
-		case "r", "R":
-			state.IssueSelected = selected
-			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
-			return 0, "refresh"
-		case "\x1b[A":
-			selected--
-			if selected < 0 {
-				selected = len(issues) - 1
-			}
-			render()
-		case "\x1b[B":
-			selected++
-			if selected >= len(issues) {
-				selected = 0
-			}
-			render()
-		default:
-			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-				index := int(key[0] - '1')
-				if index >= 0 && index < len(issues) {
-					selected = index
-					render()
-				}
-			}
-		}
-	}
-}
-
-func printIssueDetail(issue Issue) {
-	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
-	fmt.Println(strings.Repeat("=", 80))
-	fmt.Printf("State:     %s\n", issue.State)
-	fmt.Printf("Author:    %s\n", issue.Author.Login)
-	fmt.Printf("Created:   %s\n", strings.TrimSuffix(strings.Split(issue.CreatedAt, "T")[0], "Z"))
-	fmt.Printf("Assignees: %s\n", joinUsers(issue.Assignees))
-	fmt.Printf("Labels:    %s\n", joinLabels(issue.Labels))
-	fmt.Printf("URL:       %s\n", issue.URL)
-	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println()
-
-	body := strings.TrimSpace(issue.Body)
-	if body == "" {
-		body = "No description provided."
-	}
-
-	fmt.Println(body)
-	fmt.Println()
-}
-
-func menu(reader *bufio.Reader, options []string) string {
-	if len(options) == 0 {
-		return ""
-	}
-
-	selected := 0
-
-	if err := enableRawMode(); err != nil {
-		return numberedMenu(reader, options)
-	}
-	defer disableRawMode()
-
-	renderMenu := func() {
-		fmt.Print("\033[?25l")
-		fmt.Print("\033[s")
-
-		for index, option := range options {
-			prefix := "  "
-			if index == selected {
-				prefix = "> "
-			}
-
-			fmt.Printf("%s%s\033[K\r\n", prefix, option)
-		}
-
-		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter submit • 1-9 jump • q quit/back\033[K")
-		fmt.Print("\033[u")
-	}
-
-	renderMenu()
-	defer fmt.Print("\033[?25h")
-
-	buffer := make([]byte, 3)
-
-	for {
-		n, err := os.Stdin.Read(buffer)
-		if err != nil || n == 0 {
-			return ""
-		}
-
-		key := string(buffer[:n])
-
-		switch key {
-		case "\r", "\n":
-			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
-			return options[selected]
-		case "q", "Q", "\x03", "\x1b":
-			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
-			return ""
-		case "\x1b[A":
-			selected--
-			if selected < 0 {
-				selected = len(options) - 1
-			}
-			renderMenu()
-		case "\x1b[B":
-			selected++
-			if selected >= len(options) {
-				selected = 0
-			}
-			renderMenu()
-		default:
-			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-				index := int(key[0] - '1')
-				if index >= 0 && index < len(options) {
-					selected = index
-					renderMenu()
-				}
-			}
-		}
-	}
-}
-
-func numberedMenu(reader *bufio.Reader, options []string) string {
-	for index, option := range options {
-		fmt.Printf("%d) %s\n", index+1, option)
-	}
-
-	for {
-		input := strings.TrimSpace(prompt(reader, "Choose: "))
-		if input == "" {
-			return ""
-		}
-
-		number, err := strconv.Atoi(input)
-		if err != nil || number < 1 || number > len(options) {
-			fmt.Println("Enter a number from the menu.")
-			continue
-		}
-
-		return options[number-1]
-	}
-}
+// ── Terminal Utilities ───────────────────────────────────────────────────────
 
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")
@@ -1239,37 +1276,8 @@ func promptBranchName(reader *bufio.Reader, defaultName string) (string, bool) {
 	return value, true
 }
 
-func renderHeader(state *AppState, rawMode bool) {
-	nl := "\n"
-	if rawMode {
-		nl = "\r\n"
-	}
-	sep := strings.Repeat("=", 52)
-
-	issuesLabel := "  1: Issues  "
-	prsLabel := "  2: Pull Requests  "
-	if state.ActiveTab == TabIssues {
-		issuesLabel = colorInvert + issuesLabel + colorReset
-	} else {
-		prsLabel = colorInvert + prsLabel + colorReset
-	}
-
-	fmt.Printf("GitHub TUI — %s%s", state.Repo, nl)
-	fmt.Printf("%s%s", sep, nl)
-	fmt.Printf("%s%s%s", issuesLabel, prsLabel, nl)
-	fmt.Printf("%s%s", sep, nl)
-
-	if state.ActiveTab == TabIssues {
-		f := state.IssueFilters
-		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
-			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
-	} else {
-		f := state.PRFilters
-		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
-			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
-	}
-	fmt.Printf("%s%s", sep, nl)
-	fmt.Print(nl)
+func clearScreen() {
+	fmt.Print("\033[H\033[2J")
 }
 
 func require(name string) error {
@@ -1332,73 +1340,7 @@ func copyText(text string) error {
 	return errors.New("no clipboard command available")
 }
 
-func clearScreen() {
-	fmt.Print("\033[H\033[2J")
-}
-
-func displayAny(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "any"
-	}
-
-	return value
-}
-
-func joinUsers(users []User) string {
-	if len(users) == 0 {
-		return "Unassigned"
-	}
-
-	values := make([]string, 0, len(users))
-	for _, user := range users {
-		values = append(values, user.Login)
-	}
-
-	return strings.Join(values, ", ")
-}
-
-func joinLabels(labels []Label) string {
-	if len(labels) == 0 {
-		return "-"
-	}
-
-	values := make([]string, 0, len(labels))
-	for _, label := range labels {
-		values = append(values, label.Name)
-	}
-
-	return strings.Join(values, ", ")
-}
-
-func cleanLine(value string) string {
-	value = strings.ReplaceAll(value, "\n", " ")
-	value = strings.ReplaceAll(value, "\t", " ")
-	return strings.Join(strings.Fields(value), " ")
-}
-
-func truncate(value string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-
-	runes := []rune(value)
-	if len(runes) <= max {
-		return value
-	}
-
-	if max <= 1 {
-		return string(runes[:max])
-	}
-
-	return string(runes[:max-1]) + "…"
-}
-
-func fatal(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
-}
-
-// ── String/Display Utilities ──────────────────────────────────────────────────
+// ── String / Display Utilities ───────────────────────────────────────────────
 
 func filterNonDraftPRs(prs []PullRequest) []PullRequest {
 	var out []PullRequest
@@ -1469,4 +1411,66 @@ func stateIndicator(state string, isDraft bool) string {
 	default:
 		return colorGray + "○" + colorReset
 	}
+}
+
+func joinUsers(users []User) string {
+	if len(users) == 0 {
+		return "Unassigned"
+	}
+
+	values := make([]string, 0, len(users))
+	for _, user := range users {
+		values = append(values, user.Login)
+	}
+
+	return strings.Join(values, ", ")
+}
+
+func joinLabels(labels []Label) string {
+	if len(labels) == 0 {
+		return "-"
+	}
+
+	values := make([]string, 0, len(labels))
+	for _, label := range labels {
+		values = append(values, label.Name)
+	}
+
+	return strings.Join(values, ", ")
+}
+
+func cleanLine(value string) string {
+	value = strings.ReplaceAll(value, "\n", " ")
+	value = strings.ReplaceAll(value, "\t", " ")
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func truncate(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+
+	if max <= 1 {
+		return string(runes[:max])
+	}
+
+	return string(runes[:max-1]) + "…"
+}
+
+func displayAny(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "any"
+	}
+
+	return value
+}
+
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
 }
