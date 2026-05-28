@@ -130,12 +130,206 @@ func main() {
 	}
 }
 
+// ── Pull Requests Tab ────────────────────────────────────────────────────────
+
 func browsePRs(reader *bufio.Reader, state *AppState) string {
+	for {
+		prs, err := fetchPRs(state.PRFilters)
+		if err != nil {
+			clearScreen()
+			renderHeader(state, false)
+			fmt.Println("Error fetching PRs:", err)
+			pause(reader)
+			return "quit"
+		}
+		number, action := prList(reader, state, prs)
+		switch action {
+		case "quit", "back":
+			return "quit"
+		case "switch":
+			return ""
+		case "refresh":
+			continue
+		case "filters":
+			state.PRFilters = configurePRFilters(reader, state)
+		case "new":
+			clearScreen()
+			renderHeader(state, false)
+			runCommandPassthrough("gh", "pr", "create")
+		case "open":
+			viewPR(reader, state, number)
+		}
+	}
+}
+
+func prList(reader *bufio.Reader, state *AppState, prs []PullRequest) (int, string) {
+	if len(prs) == 0 {
+		return 0, "back"
+	}
+
+	selected := state.PRSelected
+	if selected >= len(prs) {
+		selected = 0
+	}
+
+	if err := enableRawMode(); err != nil {
+		// Fallback: non-raw mode
+		clearScreen()
+		renderHeader(state, false)
+
+		fmt.Printf("  %-6s %-58s %-12s %-9s %s\n", "#", "TITLE", "AUTHOR", "STATUS", "CHECKS")
+		fmt.Printf("  %-6s %-58s %-12s %-9s %s\n", "-----", "-----------------------------------------------------------", "-----------", "--------", "------")
+		for _, pr := range prs {
+			status := pr.State
+			if pr.IsDraft {
+				status = "draft"
+			}
+			fmt.Printf("  %-6d %-58s %-12s %-9s %s\n",
+				pr.Number,
+				truncate(pr.Title, 58),
+				pr.Author.Login,
+				status,
+				summarizeChecks(pr.StatusRollup),
+			)
+		}
+
+		fmt.Println()
+		input := prompt(reader, "PR number, n new, f filters, r refresh, q quit: ")
+		input = strings.TrimSpace(strings.ToLower(input))
+
+		switch input {
+		case "", "q", "quit", "b", "back":
+			return 0, "quit"
+		case "r", "refresh":
+			return 0, "refresh"
+		case "n", "new":
+			return 0, "new"
+		case "f", "filters":
+			return 0, "filters"
+		}
+
+		number, err := strconv.Atoi(input)
+		if err != nil {
+			return 0, "quit"
+		}
+		return number, "open"
+	}
+	defer disableRawMode()
+	defer fmt.Print("\033[?25h")
+
+	render := func() {
+		clearScreen()
+		renderHeader(state, true)
+		fmt.Print("\033[?25l")
+
+		fmt.Printf("  %-8s %-58s %-12s %-9s %s\r\n", "  #", "TITLE", "AUTHOR", "STATUS", "CHECKS")
+		fmt.Printf("  %-8s %-58s %-12s %-9s %s\r\n", "-----", "-----------------------------------------------------------", "-----------", "--------", "------")
+
+		for index, pr := range prs {
+			prefix := "  "
+			if index == selected {
+				prefix = "> "
+			}
+			indicator := stateIndicator(pr.State, pr.IsDraft)
+			status := pr.State
+			if pr.IsDraft {
+				status = "draft"
+			}
+			fmt.Printf(
+				"%s%s %-6d %-58s %-12s %-9s %s\r\n",
+				prefix,
+				indicator,
+				pr.Number,
+				truncate(pr.Title, 58),
+				pr.Author.Login,
+				status,
+				summarizeChecks(pr.StatusRollup),
+			)
+		}
+
+		fmt.Print("\r\n")
+		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
+	}
+
+	render()
+
+	buffer := make([]byte, 3)
+
+	for {
+		n, err := os.Stdin.Read(buffer)
+		if err != nil || n == 0 {
+			return 0, "quit"
+		}
+
+		key := string(buffer[:n])
+
+		switch key {
+		case "\t", "\x1b[Z": // Tab / Shift+Tab — switch active tab
+			state.PRSelected = selected
+			if state.ActiveTab == TabPRs {
+				state.ActiveTab = TabIssues
+			} else {
+				state.ActiveTab = TabPRs
+			}
+			fmt.Print("\033[?25h\r\n")
+			return 0, "switch"
+		case "n", "N":
+			state.PRSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "new"
+		case "f", "F":
+			state.PRSelected = selected
+			fmt.Print("\033[?25h\r\n")
+			return 0, "filters"
+		case "\r", "\n":
+			state.PRSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return prs[selected].Number, "open"
+		case "q", "Q", "b", "B", "\x03", "\x1b":
+			state.PRSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return 0, "quit"
+		case "r", "R":
+			state.PRSelected = selected
+			fmt.Print("\033[?25h")
+			fmt.Print("\r\n")
+			return 0, "refresh"
+		case "\x1b[A": // up arrow
+			selected--
+			if selected < 0 {
+				selected = len(prs) - 1
+			}
+			render()
+		case "\x1b[B": // down arrow
+			selected++
+			if selected >= len(prs) {
+				selected = 0
+			}
+			render()
+		default:
+			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+				index := int(key[0] - '1')
+				if index >= 0 && index < len(prs) {
+					selected = index
+					render()
+				}
+			}
+		}
+	}
+}
+
+func viewPR(reader *bufio.Reader, state *AppState, number int) {
 	clearScreen()
 	renderHeader(state, false)
-	fmt.Println("Pull Requests tab — coming soon.")
+	fmt.Printf("PR #%d detail — coming in Task 9\n", number)
 	pause(reader)
-	return ""
+}
+
+func configurePRFilters(reader *bufio.Reader, state *AppState) PRFilters {
+	// Task 10 will implement this
+	return state.PRFilters
 }
 
 func browseIssues(reader *bufio.Reader, state *AppState) string {
