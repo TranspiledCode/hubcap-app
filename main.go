@@ -372,7 +372,6 @@ func printPRDetail(pr PullRequest) {
 	reviewStr := pr.ReviewDecision
 	if reviewStr == "" {
 		reviewStr = "—"
-		reviewColor = colorReset
 	}
 	fmt.Printf("%-12s %s%s%s\n", "Review:", reviewColor, reviewStr, colorReset)
 
