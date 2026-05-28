@@ -499,8 +499,70 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 }
 
 func configurePRFilters(reader *bufio.Reader, state *AppState) PRFilters {
-	// Task 10 will implement this
-	return state.PRFilters
+	filters := state.PRFilters
+	for {
+		clearScreen()
+		renderHeader(state, false)
+
+		choice := menu(reader, []string{
+			"Change state",
+			"Change assignee",
+			"Change label",
+			"Change draft",
+			"Change review status",
+			"Change limit",
+			"Clear filters",
+			"Back",
+		})
+
+		switch choice {
+		case "Change state":
+			s := menu(reader, []string{"open", "closed", "merged", "all", "Back"})
+			if s != "" && s != "Back" {
+				filters.State = s
+			}
+		case "Change assignee":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, @me, or blank for any: "))
+		case "Change label":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
+		case "Change draft":
+			d := menu(reader, []string{"all", "draft only", "non-draft only", "Back"})
+			switch d {
+			case "all":
+				filters.Draft = ""
+			case "draft only":
+				filters.Draft = "true"
+			case "non-draft only":
+				filters.Draft = "false"
+			}
+		case "Change review status":
+			clearScreen()
+			renderHeader(state, false)
+			filters.ReviewStatus = strings.TrimSpace(prompt(reader, "Review status (approved, changes-requested, etc.), or blank for any: "))
+		case "Change limit":
+			clearScreen()
+			renderHeader(state, false)
+			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
+			if value == "" {
+				continue
+			}
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 {
+				fmt.Println("Limit must be a positive number.")
+				pause(reader)
+				continue
+			}
+			filters.Limit = limit
+		case "Clear filters":
+			filters = PRFilters{State: "open", Limit: 50}
+		case "Back", "":
+			return filters
+		}
+	}
 }
 
 func browseIssues(reader *bufio.Reader, state *AppState) string {
