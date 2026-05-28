@@ -460,13 +460,7 @@ func fetchPRs(filters PRFilters) ([]PullRequest, error) {
 		return nil, err
 	}
 	if filters.Draft == "false" {
-		var filtered []PullRequest
-		for _, pr := range prs {
-			if !pr.IsDraft {
-				filtered = append(filtered, pr)
-			}
-		}
-		return filtered, nil
+		prs = filterNonDraftPRs(prs)
 	}
 	return prs, nil
 }
@@ -977,6 +971,16 @@ func fatal(err error) {
 }
 
 // ── String/Display Utilities ──────────────────────────────────────────────────
+
+func filterNonDraftPRs(prs []PullRequest) []PullRequest {
+	var out []PullRequest
+	for _, pr := range prs {
+		if !pr.IsDraft {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
 
 func deriveBranchName(number int, title string) string {
 	title = strings.ToLower(title)
