@@ -103,75 +103,82 @@ type AppState struct {
 }
 
 func main() {
-	filters := Filters{
-		State: "open",
-		Limit: 50,
-	}
-
 	if err := require("gh"); err != nil {
 		fatal(err)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 
+	state := &AppState{
+		ActiveTab:    TabIssues,
+		IssueFilters: Filters{State: "open", Limit: 50},
+		PRFilters:    PRFilters{State: "open", Limit: 50},
+	}
+	state.Repo = fetchRepo()
+
 	for {
-		clearScreen()
-		printHeader(filters)
-
-		choice := menu(reader, []string{
-			"Browse issues",
-			"Filters",
-			"Refresh",
-			"Quit",
-		})
-
-		switch choice {
-		case "Browse issues", "Refresh":
-			browseIssues(reader, filters)
-		case "Filters":
-			filters = configureFilters(reader, filters)
-		case "Quit", "":
-			fmt.Println("Bye.")
+		var action string
+		if state.ActiveTab == TabIssues {
+			action = browseIssues(reader, state)
+		} else {
+			action = browsePRs(reader, state)
+		}
+		if action == "quit" {
+			fmt.Println("\nBye.")
 			return
 		}
 	}
 }
 
-func browseIssues(reader *bufio.Reader, filters Filters) {
+func browsePRs(reader *bufio.Reader, state *AppState) string {
+	clearScreen()
+	renderHeader(state, false)
+	fmt.Println("Pull Requests tab — coming soon.")
+	pause(reader)
+	return ""
+}
+
+func browseIssues(reader *bufio.Reader, state *AppState) string {
 	for {
 		clearScreen()
-		printHeader(filters)
+		renderHeader(state, false)
 		fmt.Println("Fetching issues...")
 
-		issues, err := fetchIssues(filters)
+		issues, err := fetchIssues(state.IssueFilters)
 		if err != nil {
-			fmt.Println()
-			fmt.Println("Could not fetch issues:")
+			fmt.Println("\nCould not fetch issues:")
 			fmt.Println(err)
 			pause(reader)
-			return
+			return ""
 		}
 
 		if len(issues) == 0 {
-			fmt.Println()
-			fmt.Println("No issues found with the current filters.")
+			fmt.Println("\nNo issues found with the current filters.")
 			pause(reader)
-			return
+			return ""
 		}
 
-		number, action := issueList(reader, filters, issues)
+		number, action := issueList(reader, state, issues)
 		switch action {
-		case "back":
-			return
+		case "quit":
+			return "quit"
+		case "switch":
+			return ""
 		case "refresh":
 			continue
+		case "filters":
+			state.IssueFilters = configureFilters(reader, state)
+		case "new":
+			clearScreen()
+			renderHeader(state, false)
+			runCommandPassthrough("gh", "issue", "create")
 		case "open":
-			viewIssue(reader, number)
+			viewIssue(reader, state, number)
 		}
 	}
 }
 
-func viewIssue(reader *bufio.Reader, number int) {
+func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 	for {
 		clearScreen()
 
@@ -226,15 +233,17 @@ func viewIssue(reader *bufio.Reader, number int) {
 	}
 }
 
-func configureFilters(reader *bufio.Reader, filters Filters) Filters {
+func configureFilters(reader *bufio.Reader, state *AppState) Filters {
+	filters := state.IssueFilters
 	for {
 		clearScreen()
-		printHeader(filters)
+		renderHeader(state, false)
 
 		choice := menu(reader, []string{
 			"Change state",
 			"Change assignee",
 			"Change label",
+			"Change milestone",
 			"Change limit",
 			"Clear filters",
 			"Back",
@@ -242,25 +251,26 @@ func configureFilters(reader *bufio.Reader, filters Filters) Filters {
 
 		switch choice {
 		case "Change state":
-			state := menu(reader, []string{"open", "closed", "all", "Back"})
-			if state != "" && state != "Back" {
-				filters.State = state
+			s := menu(reader, []string{"open", "closed", "all", "Back"})
+			if s != "" && s != "Back" {
+				filters.State = s
 			}
 		case "Change assignee":
 			clearScreen()
-			printHeader(filters)
-			value := prompt(reader, "Assignee, @me, or blank for any: ")
-			filters.Assignee = strings.TrimSpace(value)
+			renderHeader(state, false)
+			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, @me, or blank for any: "))
 		case "Change label":
 			clearScreen()
-			printHeader(filters)
-			value := prompt(reader, "Label name, or blank for any: ")
-			filters.Label = strings.TrimSpace(value)
+			renderHeader(state, false)
+			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
+		case "Change milestone":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Milestone = strings.TrimSpace(prompt(reader, "Milestone title, or blank for any: "))
 		case "Change limit":
 			clearScreen()
-			printHeader(filters)
-			value := prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit))
-			value = strings.TrimSpace(value)
+			renderHeader(state, false)
+			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
 			if value == "" {
 				continue
 			}
@@ -281,31 +291,28 @@ func configureFilters(reader *bufio.Reader, filters Filters) Filters {
 
 func fetchIssues(filters Filters) ([]Issue, error) {
 	args := []string{
-		"issue",
-		"list",
+		"issue", "list",
 		"--state", filters.State,
 		"--limit", strconv.Itoa(filters.Limit),
 		"--json", "number,title,assignees,labels,body,url,state",
 	}
-
 	if filters.Assignee != "" {
 		args = append(args, "--assignee", filters.Assignee)
 	}
-
 	if filters.Label != "" {
 		args = append(args, "--label", filters.Label)
 	}
-
+	if filters.Milestone != "" {
+		args = append(args, "--milestone", filters.Milestone)
+	}
 	output, err := runCommand("gh", args...)
 	if err != nil {
 		return nil, err
 	}
-
 	var issues []Issue
 	if err := json.Unmarshal(output, &issues); err != nil {
 		return nil, err
 	}
-
 	return issues, nil
 }
 
@@ -350,27 +357,6 @@ func developIssue(number int) error {
 	return runCommandPassthrough("gh", "issue", "develop", strconv.Itoa(number), "--checkout")
 }
 
-func printHeader(filters Filters) {
-	fmt.Println("GitHub Issues")
-	fmt.Println(strings.Repeat("=", 48))
-	fmt.Printf("State:    %s\n", filters.State)
-	fmt.Printf("Assignee: %s\n", displayAny(filters.Assignee))
-	fmt.Printf("Label:    %s\n", displayAny(filters.Label))
-	fmt.Printf("Limit:    %d\n", filters.Limit)
-	fmt.Println(strings.Repeat("=", 48))
-	fmt.Println()
-}
-
-func printHeaderRaw(filters Filters) {
-	fmt.Print("GitHub Issues\r\n")
-	fmt.Printf("%s\r\n", strings.Repeat("=", 48))
-	fmt.Printf("State:    %s\r\n", filters.State)
-	fmt.Printf("Assignee: %s\r\n", displayAny(filters.Assignee))
-	fmt.Printf("Label:    %s\r\n", displayAny(filters.Label))
-	fmt.Printf("Limit:    %d\r\n", filters.Limit)
-	fmt.Printf("%s\r\n", strings.Repeat("=", 48))
-	fmt.Print("\r\n")
-}
 
 func printIssuesTable(issues []Issue) {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -391,16 +377,19 @@ func printIssuesTable(issues []Issue) {
 	writer.Flush()
 }
 
-func issueList(reader *bufio.Reader, filters Filters, issues []Issue) (int, string) {
+func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, string) {
 	if len(issues) == 0 {
 		return 0, "back"
 	}
 
-	selected := 0
+	selected := state.IssueSelected
+	if selected >= len(issues) {
+		selected = 0
+	}
 
 	if err := enableRawMode(); err != nil {
 		clearScreen()
-		printHeader(filters)
+		renderHeader(state, false)
 		printIssuesTable(issues)
 
 		fmt.Println()
@@ -426,7 +415,7 @@ func issueList(reader *bufio.Reader, filters Filters, issues []Issue) (int, stri
 
 	render := func() {
 		clearScreen()
-		printHeaderRaw(filters)
+		renderHeader(state, true)
 		fmt.Print("\033[?25l")
 
 		fmt.Printf("  %-7s %-58s %-22s %-34s\r\n", "NUMBER", "TITLE", "ASSIGNEE", "LABELS")
