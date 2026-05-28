@@ -815,6 +815,7 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 			fmt.Print("\r\n")
 			return 0, "quit"
 		case "r", "R":
+			state.IssueSelected = selected
 			fmt.Print("\033[?25h")
 			fmt.Print("\r\n")
 			return 0, "refresh"
