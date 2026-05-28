@@ -526,18 +526,30 @@ func printIssuesTable(issues []Issue) {
 
 func browsePRs(reader *bufio.Reader, state *AppState) string {
 	for {
+		clearScreen()
+		renderHeader(state, false)
+		fmt.Println("Fetching pull requests...")
+
 		prs, err := fetchPRs(state.PRFilters)
 		if err != nil {
-			clearScreen()
-			renderHeader(state, false)
-			fmt.Println("Error fetching PRs:", err)
+			fmt.Println("\nCould not fetch pull requests:")
+			fmt.Println(err)
 			pause(reader)
-			return "quit"
+			return ""
 		}
+
+		if len(prs) == 0 {
+			fmt.Println("\nNo pull requests found with the current filters.")
+			pause(reader)
+			return ""
+		}
+
 		number, action := prList(reader, state, prs)
 		switch action {
-		case "quit", "back":
+		case "quit":
 			return "quit"
+		case "back":
+			continue
 		case "switch":
 			return ""
 		case "refresh":
@@ -1146,11 +1158,6 @@ func fetchRepo() string {
 		return "—"
 	}
 	return repo.NameWithOwner
-}
-
-func developIssue(number int) error {
-	fmt.Printf("Creating development branch for issue #%d...\n", number)
-	return runCommandPassthrough("gh", "issue", "develop", strconv.Itoa(number), "--checkout")
 }
 
 func closeIssue(number int) error {
