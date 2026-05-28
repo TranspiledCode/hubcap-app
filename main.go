@@ -776,6 +776,9 @@ func deriveBranchName(number int, title string) string {
 	}
 	slug = strings.Trim(slug, "-")
 	prefix := fmt.Sprintf("%d-", number)
+	if slug == "" {
+		return strings.TrimRight(prefix, "-")
+	}
 	full := prefix + slug
 	if len(full) > 45 {
 		full = full[:45]
