@@ -192,23 +192,84 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 
 		printIssueDetail(issue)
 
+		closeLabel := "Close issue"
+		if strings.EqualFold(issue.State, "closed") {
+			closeLabel = "Reopen issue"
+		}
+
 		choice := menu(reader, []string{
 			"Develop branch",
+			"Create PR",
+			closeLabel,
+			"Assign to @me",
+			"Add label",
 			"Open in browser",
 			"Copy URL",
-			"Refresh issue",
-			"Back to list",
-			"Quit",
+			"Refresh",
+			"Back",
 		})
 
 		switch choice {
 		case "Develop branch":
-			if err := developIssue(number); err != nil {
+			clearScreen()
+			defaultName := deriveBranchName(issue.Number, issue.Title)
+			for {
+				name, ok := promptBranchName(reader, defaultName)
+				if !ok {
+					pause(reader)
+					continue
+				}
+				if err := runCommandPassthrough("gh", "issue", "develop",
+					strconv.Itoa(number), "--checkout", "--name", name); err != nil {
+					fmt.Println(err)
+					pause(reader)
+				}
+				return
+			}
+		case "Create PR":
+			clearScreen()
+			renderHeader(state, false)
+			if err := runCommandPassthrough("gh", "pr", "create", "--fill"); err != nil {
 				fmt.Println(err)
 				pause(reader)
-				continue
 			}
 			return
+		case "Close issue":
+			if err := closeIssue(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Issue closed.")
+			}
+			pause(reader)
+			continue
+		case "Reopen issue":
+			if err := reopenIssue(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Issue reopened.")
+			}
+			pause(reader)
+			continue
+		case "Assign to @me":
+			if err := assignIssueSelf(number); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Assigned to @me.")
+			}
+			pause(reader)
+			continue
+		case "Add label":
+			clearScreen()
+			label := strings.TrimSpace(prompt(reader, "Label name: "))
+			if label != "" {
+				if err := addIssueLabel(number, label); err != nil {
+					fmt.Println(err)
+				} else {
+					fmt.Printf("Label %q added.\n", label)
+				}
+				pause(reader)
+			}
+			continue
 		case "Open in browser":
 			if err := runCommandPassthrough("gh", "issue", "view", strconv.Itoa(number), "--web"); err != nil {
 				fmt.Println(err)
@@ -216,19 +277,16 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 			}
 		case "Copy URL":
 			if err := copyText(issue.URL); err != nil {
-				fmt.Println("Could not copy URL automatically. Here it is:")
+				fmt.Println("Could not copy URL. Here it is:")
 				fmt.Println(issue.URL)
-				fmt.Println(err)
 			} else {
 				fmt.Println("Copied issue URL.")
 			}
 			pause(reader)
-		case "Refresh issue":
+		case "Refresh":
 			continue
-		case "Back to list", "":
+		case "Back", "":
 			return
-		case "Quit":
-			os.Exit(0)
 		}
 	}
 }
@@ -355,6 +413,22 @@ func fetchRepo() string {
 func developIssue(number int) error {
 	fmt.Printf("Creating development branch for issue #%d...\n", number)
 	return runCommandPassthrough("gh", "issue", "develop", strconv.Itoa(number), "--checkout")
+}
+
+func closeIssue(number int) error {
+	return runCommandPassthrough("gh", "issue", "close", strconv.Itoa(number))
+}
+
+func reopenIssue(number int) error {
+	return runCommandPassthrough("gh", "issue", "reopen", strconv.Itoa(number))
+}
+
+func assignIssueSelf(number int) error {
+	return runCommandPassthrough("gh", "issue", "edit", strconv.Itoa(number), "--add-assignee", "@me")
+}
+
+func addIssueLabel(number int, label string) error {
+	return runCommandPassthrough("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
 }
 
 
@@ -658,6 +732,23 @@ func pause(reader *bufio.Reader) {
 	fmt.Println()
 	fmt.Print("Press Enter to continue...")
 	_, _ = reader.ReadString('\n')
+}
+
+func promptBranchName(reader *bufio.Reader, defaultName string) (string, bool) {
+	fmt.Printf("Branch name [%s]: ", defaultName)
+	value, err := reader.ReadString('\n')
+	if err != nil {
+		return "", false
+	}
+	value = strings.TrimRight(value, "\r\n")
+	if strings.TrimSpace(value) == "" {
+		value = defaultName
+	}
+	if len(value) > 45 {
+		fmt.Printf("Name is %d chars (max 45). Try again.\n", len(value))
+		return "", false
+	}
+	return value, true
 }
 
 func renderHeader(state *AppState, rawMode bool) {
