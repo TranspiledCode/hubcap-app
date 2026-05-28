@@ -330,6 +330,21 @@ func fetchIssue(number int) (Issue, error) {
 	return issue, nil
 }
 
+func fetchRepo() string {
+	type repoResponse struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+	output, err := runCommand("gh", "repo", "view", "--json", "nameWithOwner")
+	if err != nil {
+		return "—"
+	}
+	var repo repoResponse
+	if err := json.Unmarshal(output, &repo); err != nil {
+		return "—"
+	}
+	return repo.NameWithOwner
+}
+
 func developIssue(number int) error {
 	fmt.Printf("Creating development branch for issue #%d...\n", number)
 	return runCommandPassthrough("gh", "issue", "develop", strconv.Itoa(number), "--checkout")
@@ -630,6 +645,39 @@ func pause(reader *bufio.Reader) {
 	fmt.Println()
 	fmt.Print("Press Enter to continue...")
 	_, _ = reader.ReadString('\n')
+}
+
+func renderHeader(state *AppState, rawMode bool) {
+	nl := "\n"
+	if rawMode {
+		nl = "\r\n"
+	}
+	sep := strings.Repeat("=", 52)
+
+	issuesLabel := "  1: Issues  "
+	prsLabel := "  2: Pull Requests  "
+	if state.ActiveTab == TabIssues {
+		issuesLabel = colorInvert + issuesLabel + colorReset
+	} else {
+		prsLabel = colorInvert + prsLabel + colorReset
+	}
+
+	fmt.Printf("GitHub TUI — %s%s", state.Repo, nl)
+	fmt.Printf("%s%s", sep, nl)
+	fmt.Printf("%s%s%s", issuesLabel, prsLabel, nl)
+	fmt.Printf("%s%s", sep, nl)
+
+	if state.ActiveTab == TabIssues {
+		f := state.IssueFilters
+		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
+			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+	} else {
+		f := state.PRFilters
+		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
+			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+	}
+	fmt.Printf("%s%s", sep, nl)
+	fmt.Print(nl)
 }
 
 func require(name string) error {
