@@ -401,16 +401,14 @@ func printPRDetail(pr PullRequest) {
 
 func viewPR(reader *bufio.Reader, state *AppState, number int) {
 	for {
+		clearScreen()
+		renderHeader(state, false)
 		pr, err := fetchPR(number)
 		if err != nil {
-			clearScreen()
-			renderHeader(state, false)
 			fmt.Println("Error fetching PR:", err)
 			pause(reader)
 			return
 		}
-		clearScreen()
-		renderHeader(state, false)
 		printPRDetail(pr)
 
 		// Build menu
@@ -548,7 +546,7 @@ func browseIssues(reader *bufio.Reader, state *AppState) string {
 func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 	for {
 		clearScreen()
-
+		renderHeader(state, false)
 		issue, err := fetchIssue(number)
 		if err != nil {
 			fmt.Println("Could not fetch issue:")
