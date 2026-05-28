@@ -432,6 +432,71 @@ func addIssueLabel(number int, label string) error {
 	return runCommandPassthrough("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
 }
 
+func fetchPRs(filters PRFilters) ([]PullRequest, error) {
+	args := []string{
+		"pr", "list",
+		"--state", filters.State,
+		"--limit", strconv.Itoa(filters.Limit),
+		"--json", "number,title,author,assignees,labels,state,isDraft,headRefName,statusCheckRollup,url",
+	}
+	if filters.Assignee != "" {
+		args = append(args, "--assignee", filters.Assignee)
+	}
+	if filters.Label != "" {
+		args = append(args, "--label", filters.Label)
+	}
+	if filters.Draft == "true" {
+		args = append(args, "--draft")
+	}
+	if filters.ReviewStatus != "" {
+		args = append(args, "--search", "review:"+filters.ReviewStatus)
+	}
+	output, err := runCommand("gh", args...)
+	if err != nil {
+		return nil, err
+	}
+	var prs []PullRequest
+	if err := json.Unmarshal(output, &prs); err != nil {
+		return nil, err
+	}
+	if filters.Draft == "false" {
+		var filtered []PullRequest
+		for _, pr := range prs {
+			if !pr.IsDraft {
+				filtered = append(filtered, pr)
+			}
+		}
+		return filtered, nil
+	}
+	return prs, nil
+}
+
+func fetchPR(number int) (PullRequest, error) {
+	output, err := runCommand(
+		"gh",
+		"pr",
+		"view",
+		strconv.Itoa(number),
+		"--json",
+		"number,title,body,author,assignees,labels,state,isDraft,headRefName,reviewDecision,statusCheckRollup,url,createdAt",
+	)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	var pr PullRequest
+	if err := json.Unmarshal(output, &pr); err != nil {
+		return PullRequest{}, err
+	}
+	return pr, nil
+}
+
+func closePR(number int) error {
+	return runCommandPassthrough("gh", "pr", "close", strconv.Itoa(number))
+}
+
+func reopenPR(number int) error {
+	return runCommandPassthrough("gh", "pr", "reopen", strconv.Itoa(number))
+}
 
 func printIssuesTable(issues []Issue) {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

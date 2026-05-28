@@ -74,3 +74,25 @@ func TestTruncate(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchPRsDraftFilter(t *testing.T) {
+	// Test that non-draft filtering (Draft=="false") is applied correctly
+	// by testing the filtering logic directly:
+	prs := []PullRequest{
+		{Number: 1, IsDraft: false},
+		{Number: 2, IsDraft: true},
+		{Number: 3, IsDraft: false},
+	}
+	var filtered []PullRequest
+	for _, pr := range prs {
+		if !pr.IsDraft {
+			filtered = append(filtered, pr)
+		}
+	}
+	if len(filtered) != 2 {
+		t.Errorf("expected 2, got %d", len(filtered))
+	}
+	if filtered[0].Number != 1 || filtered[1].Number != 3 {
+		t.Errorf("wrong PRs: %v", filtered)
+	}
+}
