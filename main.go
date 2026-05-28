@@ -144,14 +144,30 @@ func browseIssues(reader *bufio.Reader, state *AppState) string {
 		if err != nil {
 			fmt.Println("\nCould not fetch issues:")
 			fmt.Println(err)
-			pause(reader)
-			return ""
+			fmt.Println("  Tab — switch tabs  |  r — retry  |  q — quit")
+			action := emptyTabAction(reader, state, TabPRs)
+			switch action {
+			case "quit":
+				return "quit"
+			case "switch":
+				return ""
+			}
+			continue
 		}
 
 		if len(issues) == 0 {
 			fmt.Println("\nNo issues found with the current filters.")
-			pause(reader)
-			return ""
+			fmt.Println("  Tab — switch tabs  |  f — change filters  |  q — quit")
+			action := emptyTabAction(reader, state, TabPRs)
+			switch action {
+			case "quit":
+				return "quit"
+			case "switch":
+				return ""
+			case "filters":
+				state.IssueFilters = configureFilters(reader, state)
+			}
+			continue
 		}
 
 		number, action := issueList(reader, state, issues)
@@ -534,14 +550,30 @@ func browsePRs(reader *bufio.Reader, state *AppState) string {
 		if err != nil {
 			fmt.Println("\nCould not fetch pull requests:")
 			fmt.Println(err)
-			pause(reader)
-			return ""
+			fmt.Println("  Tab — switch tabs  |  r — retry  |  q — quit")
+			action := emptyTabAction(reader, state, TabIssues)
+			switch action {
+			case "quit":
+				return "quit"
+			case "switch":
+				return ""
+			}
+			continue
 		}
 
 		if len(prs) == 0 {
 			fmt.Println("\nNo pull requests found with the current filters.")
-			pause(reader)
-			return ""
+			fmt.Println("  Tab — switch tabs  |  f — change filters  |  q — quit")
+			action := emptyTabAction(reader, state, TabIssues)
+			switch action {
+			case "quit":
+				return "quit"
+			case "switch":
+				return ""
+			case "filters":
+				state.PRFilters = configurePRFilters(reader, state)
+			}
+			continue
 		}
 
 		number, action := prList(reader, state, prs)
@@ -1237,6 +1269,37 @@ func reopenPR(number int) error {
 }
 
 // ── Terminal Utilities ───────────────────────────────────────────────────────
+
+// emptyTabAction reads a single keypress for empty-list and error screens.
+// switchTarget is the tab to switch to on Tab/Shift-Tab.
+// Returns "quit", "switch", "filters", or "" (retry/refresh).
+func emptyTabAction(reader *bufio.Reader, state *AppState, switchTarget TabID) string {
+	if err := enableRawMode(); err != nil {
+		// fallback: cooked mode
+		input := prompt(reader, "> ")
+		switch strings.TrimSpace(strings.ToLower(input)) {
+		case "q", "quit", "b":
+			return "quit"
+		case "f":
+			return "filters"
+		}
+		return ""
+	}
+	defer disableRawMode()
+	var buf [4]byte
+	n, _ := os.Stdin.Read(buf[:])
+	key := string(buf[:n])
+	switch key {
+	case "\t", "\x1b[Z": // Tab / Shift+Tab
+		state.ActiveTab = switchTarget
+		return "switch"
+	case "f", "F":
+		return "filters"
+	case "q", "Q", "b", "B", "\x03", "\x1b":
+		return "quit"
+	}
+	return "" // any other key: retry
+}
 
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")
