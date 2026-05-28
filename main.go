@@ -160,7 +160,7 @@ func browseIssues(reader *bufio.Reader, state *AppState) string {
 
 		number, action := issueList(reader, state, issues)
 		switch action {
-		case "quit":
+		case "quit", "back":
 			return "quit"
 		case "switch":
 			return ""
