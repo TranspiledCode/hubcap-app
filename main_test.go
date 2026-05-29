@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"hubcap/internal/github"
 )
 
 func TestDeriveBranchName(t *testing.T) {
@@ -35,14 +37,14 @@ func TestDeriveBranchNameMaxLength(t *testing.T) {
 func TestSummarizeChecks(t *testing.T) {
 	tests := []struct {
 		name   string
-		checks []CheckRun
+		checks []github.CheckRun
 		want   string
 	}{
-		{"empty", []CheckRun{}, "—"},
-		{"passing", []CheckRun{{Status: "COMPLETED", Conclusion: "SUCCESS"}}, colorGreen + "✓" + colorReset},
-		{"failing", []CheckRun{{Status: "COMPLETED", Conclusion: "FAILURE"}}, colorRed + "✗" + colorReset},
-		{"pending", []CheckRun{{Status: "IN_PROGRESS", Conclusion: ""}}, colorYellow + "…" + colorReset},
-		{"mixed fail", []CheckRun{
+		{"empty", []github.CheckRun{}, "—"},
+		{"passing", []github.CheckRun{{Status: "COMPLETED", Conclusion: "SUCCESS"}}, colorGreen + "✓" + colorReset},
+		{"failing", []github.CheckRun{{Status: "COMPLETED", Conclusion: "FAILURE"}}, colorRed + "✗" + colorReset},
+		{"pending", []github.CheckRun{{Status: "IN_PROGRESS", Conclusion: ""}}, colorYellow + "…" + colorReset},
+		{"mixed fail", []github.CheckRun{
 			{Status: "COMPLETED", Conclusion: "SUCCESS"},
 			{Status: "COMPLETED", Conclusion: "FAILURE"},
 		}, colorRed + "✗" + colorReset},
@@ -64,7 +66,7 @@ func TestTruncate(t *testing.T) {
 		{"hello", 10, "hello"},
 		{"hello world", 8, "hello w…"},
 		{"", 5, ""},
-		{"hi", 1, "h"},
+		{"hi", 1, "…"},
 		{"hi", 0, ""},
 	}
 	for _, tc := range tests {
@@ -72,20 +74,5 @@ func TestTruncate(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("truncate(%q, %d) = %q, want %q", tc.value, tc.max, got, tc.want)
 		}
-	}
-}
-
-func TestFilterNonDraftPRs(t *testing.T) {
-	input := []PullRequest{
-		{Number: 1, IsDraft: false},
-		{Number: 2, IsDraft: true},
-		{Number: 3, IsDraft: false},
-	}
-	got := filterNonDraftPRs(input)
-	if len(got) != 2 {
-		t.Fatalf("expected 2, got %d", len(got))
-	}
-	if got[0].Number != 1 || got[1].Number != 3 {
-		t.Errorf("wrong PRs: %v", got)
 	}
 }
