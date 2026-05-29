@@ -22,7 +22,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 func TestLoadConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	os.WriteFile(path, []byte("not json"), 0644)
+	if err := os.WriteFile(path, []byte("not json"), 0644); err != nil {
+		t.Fatalf("setup: write file: %v", err)
+	}
 
 	cfg := loadConfigFrom(path)
 	if cfg.AvailableFilter.State != "open" {

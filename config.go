@@ -59,8 +59,3 @@ func saveConfigTo(cfg Config, path string) error {
 	}
 	return os.WriteFile(path, data, 0644)
 }
-
-// browseDashboard is a stub for the dashboard tab navigation.
-func browseDashboard(reader interface{}, state *AppState, cfg *Config) string {
-	return ""
-}
