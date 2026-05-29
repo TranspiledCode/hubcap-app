@@ -194,21 +194,18 @@ func browseDashboard(reader *bufio.Reader, state *AppState, cfg *Config) string 
 			needsRefresh = true
 
 		case "n", "N":
-			disableRawMode()
 			clearScreen()
 			renderHeader(state, false)
 			github.RunCommandPassthrough("gh", "issue", "create")
 			needsRefresh = true
 
 		case "p", "P":
-			disableRawMode()
 			clearScreen()
 			renderHeader(state, false)
 			github.RunCommandPassthrough("gh", "pr", "create")
 			needsRefresh = true
 
 		case "c", "C":
-			disableRawMode()
 			*cfg = configureHubcap(reader, state, *cfg)
 			needsRefresh = true
 
@@ -261,7 +258,6 @@ func browseDashboard(reader *bufio.Reader, state *AppState, cfg *Config) string 
 			} else {
 				// open item
 				state.DashboardCursor = cursor
-				disableRawMode()
 				openDashboardItemByRow(reader, state, data, row)
 				needsRefresh = true
 			}
