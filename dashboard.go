@@ -390,3 +390,97 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 		fmt.Print("number open • n new issue • p new PR • r refresh • c config • q quit\n")
 	}
 }
+
+// ── Config screen ─────────────────────────────────────────────────────────────
+
+func configureHubcap(reader *bufio.Reader, state *AppState, cfg Config) Config {
+	for {
+		clearScreen()
+		renderHeader(state, false)
+		fmt.Println("Configure hubcap")
+		fmt.Println()
+
+		choice := menu(reader, []string{
+			"Change \"Available to Grab\" filter",
+			"Reset to defaults",
+			"Back",
+		})
+
+		switch choice {
+		case "Change \"Available to Grab\" filter":
+			cfg.AvailableFilter = configureAvailableFilter(reader, state, cfg.AvailableFilter)
+			if err := saveConfig(cfg); err != nil {
+				fmt.Println("Could not save config:", err)
+				pause(reader)
+			}
+		case "Reset to defaults":
+			cfg = defaultConfig()
+			if err := saveConfig(cfg); err != nil {
+				fmt.Println("Could not save config:", err)
+				pause(reader)
+			} else {
+				fmt.Println("Reset to defaults.")
+				pause(reader)
+			}
+		case "Back", "":
+			return cfg
+		}
+	}
+}
+
+func configureAvailableFilter(reader *bufio.Reader, state *AppState, filters github.Filters) github.Filters {
+	for {
+		clearScreen()
+		renderHeader(state, false)
+		fmt.Println("Available to Grab filter")
+		fmt.Println()
+
+		choice := menu(reader, []string{
+			"Change state",
+			"Change assignee",
+			"Change label",
+			"Change milestone",
+			"Change limit",
+			"Clear filter",
+			"Back",
+		})
+
+		switch choice {
+		case "Change state":
+			s := menu(reader, []string{"open", "closed", "all", "Back"})
+			if s != "" && s != "Back" {
+				filters.State = s
+			}
+		case "Change assignee":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, or blank for any: "))
+		case "Change label":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
+		case "Change milestone":
+			clearScreen()
+			renderHeader(state, false)
+			filters.Milestone = strings.TrimSpace(prompt(reader, "Milestone title, or blank for any: "))
+		case "Change limit":
+			clearScreen()
+			renderHeader(state, false)
+			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
+			if value == "" {
+				continue
+			}
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 {
+				fmt.Println("Limit must be a positive number.")
+				pause(reader)
+				continue
+			}
+			filters.Limit = limit
+		case "Clear filter":
+			filters = github.Filters{State: "open", Limit: 25}
+		case "Back", "":
+			return filters
+		}
+	}
+}
