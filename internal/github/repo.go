@@ -88,7 +88,6 @@ func FetchRepo() string {
 
 func RunCommand(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
-	cmd.Stdin = os.Stdin
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
