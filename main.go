@@ -328,7 +328,7 @@ func issueList(reader *bufio.Reader, state *AppState, issues []Issue) (int, stri
 	}
 }
 
-func printIssueDetail(issue Issue) {
+func printIssueDetail(issue Issue, maxBodyRows, termCols int) {
 	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Printf("State:     %s\n", issue.State)
@@ -344,8 +344,7 @@ func printIssueDetail(issue Issue) {
 	if body == "" {
 		body = "No description provided."
 	}
-
-	fmt.Println(body)
+	fmt.Println(truncateLines(body, maxBodyRows, termCols))
 	fmt.Println()
 }
 
@@ -361,7 +360,12 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 			return
 		}
 
-		printIssueDetail(issue)
+		// Fixed visual rows on screen (header=7, title+sep+6 fields+sep+blank=10,
+		// trailing blank=1 → 18). Menu = 9 items + blank + hint = 11. Safety = 2.
+		const issueFixedLines = 18
+		const issueMenuItems = 9
+		budget, cols := bodyBudget(issueFixedLines, issueMenuItems)
+		printIssueDetail(issue, budget, cols)
 
 		closeLabel := "Close issue"
 		if strings.EqualFold(issue.State, "closed") {
@@ -756,7 +760,7 @@ func prList(reader *bufio.Reader, state *AppState, prs []PullRequest) (int, stri
 	}
 }
 
-func printPRDetail(pr PullRequest) {
+func printPRDetail(pr PullRequest, maxBodyRows, termCols int) {
 	sep := strings.Repeat("=", 80)
 	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
 	fmt.Println(sep)
@@ -825,7 +829,7 @@ func printPRDetail(pr PullRequest) {
 
 	if pr.Body != "" {
 		fmt.Println()
-		fmt.Println(pr.Body)
+		fmt.Println(truncateLines(strings.TrimSpace(pr.Body), maxBodyRows, termCols))
 	}
 	fmt.Println()
 }
@@ -840,7 +844,12 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 			pause(reader)
 			return
 		}
-		printPRDetail(pr)
+		// Fixed visual rows on screen (header=7, title+sep+9 fields+sep=12,
+		// blank before body=1, trailing blank=1 → 21). Menu = 7+2 = 9. Safety = 2.
+		const prFixedLines = 21
+		const prMenuItems = 7
+		budget, cols := bodyBudget(prFixedLines, prMenuItems)
+		printPRDetail(pr, budget, cols)
 
 		closeLabel := "Close PR"
 		if pr.State == "closed" {
@@ -1011,7 +1020,6 @@ func menu(reader *bufio.Reader, options []string) string {
 
 	renderMenu := func() {
 		fmt.Print("\033[?25l")
-		fmt.Print("\033[s")
 
 		for index, option := range options {
 			prefix := "  "
@@ -1024,7 +1032,11 @@ func menu(reader *bufio.Reader, options []string) string {
 
 		fmt.Print("\r\n")
 		fmt.Print("↑/↓ navigate • enter submit • 1-9 jump • q quit/back\033[K")
-		fmt.Print("\033[u")
+		// Move cursor back to the top of the menu area so the next render
+		// overwrites this one in-place. \033[<n>F = cursor up n lines, to
+		// column 0. We moved down len(options) lines (one per item) + 1 (the
+		// blank separator), so we need to go up that many.
+		fmt.Printf("\033[%dF", len(options)+1)
 	}
 
 	renderMenu()
@@ -1043,11 +1055,12 @@ func menu(reader *bufio.Reader, options []string) string {
 		switch key {
 		case "\r", "\n":
 			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
+			// Advance past the menu so subsequent output isn't drawn over it
+			fmt.Printf("\033[%dB\r\n", len(options)+1)
 			return options[selected]
 		case "q", "Q", "\x03", "\x1b":
 			fmt.Print("\033[?25h")
-			fmt.Print("\r\n")
+			fmt.Printf("\033[%dB\r\n", len(options)+1)
 			return ""
 		case "\x1b[A":
 			selected--
@@ -1350,6 +1363,39 @@ func clearScreen() {
 	fmt.Print("\033[H\033[2J")
 }
 
+// termSize returns the terminal dimensions, defaulting to 40×80 on error.
+func termSize() (rows, cols int) {
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	out, err := cmd.Output()
+	if err != nil {
+		return 40, 80
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) != 2 {
+		return 40, 80
+	}
+	r, err1 := strconv.Atoi(parts[0])
+	c, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || r <= 0 || c <= 0 {
+		return 40, 80
+	}
+	return r, c
+}
+
+// bodyBudget returns the number of visual rows available for body text, plus
+// the terminal column width (needed for wrap-aware truncation).
+//   fixedLines – every line always on screen (header + metadata + separators)
+//   menuItems  – items passed to menu() — it adds 2 more rows (blank + hint)
+func bodyBudget(fixedLines, menuItems int) (visualRows, termCols int) {
+	rows, cols := termSize()
+	budget := rows - fixedLines - (menuItems + 2) - 2 // -2 safety margin
+	if budget < 3 {
+		budget = 3
+	}
+	return budget, cols
+}
+
 func require(name string) error {
 	_, err := exec.LookPath(name)
 	if err != nil {
@@ -1513,6 +1559,30 @@ func cleanLine(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	value = strings.ReplaceAll(value, "\t", " ")
 	return strings.Join(strings.Fields(value), " ")
+}
+
+// truncateLines caps body text to maxVisualRows visual rows, accounting for
+// line wrapping at termCols column width. If text is cut, a dim hint is shown.
+func truncateLines(text string, maxVisualRows, termCols int) string {
+	if termCols <= 0 {
+		termCols = 80
+	}
+	lines := strings.Split(text, "\n")
+	usedRows := 0
+	for i, line := range lines {
+		runeLen := len([]rune(line))
+		lineRows := 1
+		if runeLen > termCols {
+			lineRows = (runeLen + termCols - 1) / termCols
+		}
+		if usedRows+lineRows > maxVisualRows {
+			// cut here
+			out := strings.TrimRight(strings.Join(lines[:i], "\n"), " \t")
+			return out + "\n" + colorGray + "… open in browser to read more" + colorReset
+		}
+		usedRows += lineRows
+	}
+	return text // fits without truncation
 }
 
 func truncate(value string, max int) string {
