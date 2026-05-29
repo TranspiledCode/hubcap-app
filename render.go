@@ -242,6 +242,9 @@ func truncateLines(text string, maxVisualRows, termCols int) string {
 			lineRows = (runeLen + termCols - 1) / termCols
 		}
 		if usedRows+lineRows > maxVisualRows {
+			if i == 0 {
+				return text
+			}
 			out := strings.TrimRight(strings.Join(lines[:i], "\n"), " \t")
 			return out + "\n" + colorGray + "… open in browser to read more" + colorReset
 		}
@@ -257,9 +260,6 @@ func truncate(value string, max int) string {
 	runes := []rune(value)
 	if len(runes) <= max {
 		return value
-	}
-	if max <= 1 {
-		return string(runes[:max])
 	}
 	return string(runes[:max-1]) + "…"
 }
