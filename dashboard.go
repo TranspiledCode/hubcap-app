@@ -122,3 +122,79 @@ func browseDashboard(reader interface{}, state *AppState, cfg *Config) string {
 
 // ensure fmt is used — will be used by render functions in later tasks.
 var _ = fmt.Sprintf
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+
+func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, cursor int, collapsed [4]bool, rawMode bool) {
+	nl := "\n"
+	cr := ""
+	if rawMode {
+		nl = "\r\n"
+		cr = "\r"
+	}
+
+	clearScreen()
+	renderHeader(state, rawMode)
+
+	if len(rows) == 0 {
+		fmt.Printf("No items to show. Press r to refresh.%s", nl)
+		return
+	}
+
+	for i, row := range rows {
+		sel := ""
+		if i == cursor {
+			sel = "> "
+		} else {
+			sel = "  "
+		}
+
+		if row.isHeader {
+			count := sectionLen(data, row.sectionID)
+			errMark := ""
+			if data.errs[row.sectionID] != nil {
+				errMark = " ⚠ could not load"
+				count = 0
+			}
+			arrow := "▾"
+			if collapsed[row.sectionID] {
+				arrow = "▸"
+			}
+			fmt.Printf("%s%s %s (%d)%s%s%s",
+				sel, arrow, sectionNames[row.sectionID], count, errMark, cr, nl)
+			continue
+		}
+
+		// item row
+		switch {
+		case row.sectionID == secReviewRequests || row.sectionID == secMyPRs:
+			pr := data.reviewRequests
+			if row.sectionID == secMyPRs {
+				pr = data.myPRs
+			}
+			p := pr[row.itemIdx]
+			indicator := stateIndicator(p.State, p.IsDraft)
+			checks := summarizeChecks(p.StatusRollup)
+			fmt.Printf("  %s%s #%-5d %-52s %s%s%s",
+				sel, indicator, p.Number, truncate(p.Title, 52), checks, cr, nl)
+		case row.isIssue:
+			var issue github.Issue
+			if row.sectionID == secAssigned {
+				issue = data.assignedIssues[row.itemIdx]
+			} else {
+				issue = data.availableIssues[row.itemIdx]
+			}
+			indicator := stateIndicator(issue.State, false)
+			labels := truncate(joinLabels(issue.Labels), 24)
+			fmt.Printf("  %s%s #%-5d %-48s %s%s%s",
+				sel, indicator, issue.Number, truncate(cleanLine(issue.Title), 48), labels, cr, nl)
+		}
+	}
+
+	fmt.Print(nl)
+	if rawMode {
+		fmt.Print("↑/↓ navigate • enter open • ← collapse • tab switch • n issue • p PR • r refresh • c config • q quit\r\n")
+	} else {
+		fmt.Print("number open • n new issue • p new PR • r refresh • c config • q quit\n")
+	}
+}
