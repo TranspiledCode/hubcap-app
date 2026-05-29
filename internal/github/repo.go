@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 )
 
@@ -110,5 +111,9 @@ func RunCommandPassthrough(name string, args ...string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Ignore SIGINT while the child runs so Ctrl+C cancels the child without
+	// killing hubcap. Signal handling is restored when this function returns.
+	signal.Ignore(os.Interrupt)
+	defer signal.Reset(os.Interrupt)
 	return cmd.Run()
 }
