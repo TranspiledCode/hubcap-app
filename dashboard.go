@@ -2,7 +2,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"hubcap/internal/github"
@@ -109,15 +113,207 @@ func fetchDashboard(cfg Config) dashboardResult {
 	return result
 }
 
-// ── Stub — replaced in Task 12 ────────────────────────────────────────────────
+// ── Navigation loop ───────────────────────────────────────────────────────────
 
-// browseDashboard is the interactive TUI loop for the My Work tab.
-// This stub is replaced with a full implementation in Task 12.
-func browseDashboard(reader interface{}, state *AppState, cfg *Config) string {
-	_ = reader
-	_ = state
-	_ = cfg
-	return "quit"
+func browseDashboard(reader *bufio.Reader, state *AppState, cfg *Config) string {
+	var data dashboardResult
+	var rows []dashRow
+	collapsed := [4]bool{}
+	needsRefresh := true
+
+	for {
+		if needsRefresh {
+			clearScreen()
+			renderHeader(state, false)
+			fmt.Println("Loading...")
+			data = fetchDashboard(*cfg)
+			rows = buildRows(data, collapsed)
+			needsRefresh = false
+		}
+
+		cursor := state.DashboardCursor
+		if cursor >= len(rows) {
+			cursor = 0
+		}
+
+		if err := enableRawMode(); err != nil {
+			// Fallback: non-raw mode
+			renderDashboard(state, data, rows, cursor, collapsed, false)
+			input := prompt(reader, "Number to open, r refresh, c config, q quit: ")
+			input = strings.TrimSpace(strings.ToLower(input))
+			switch input {
+			case "q", "quit", "b":
+				return "quit"
+			case "r":
+				needsRefresh = true
+				continue
+			case "c":
+				*cfg = configureHubcap(reader, state, *cfg)
+				data = fetchDashboard(*cfg)
+				rows = buildRows(data, collapsed)
+				continue
+			}
+			num, err := strconv.Atoi(input)
+			if err == nil {
+				openDashboardItem(reader, state, data, rows, num)
+			}
+			continue
+		}
+
+		renderDashboard(state, data, rows, cursor, collapsed, true)
+
+		buf := make([]byte, 3)
+		n, err := os.Stdin.Read(buf)
+		disableRawMode()
+		if err != nil || n == 0 {
+			return "quit"
+		}
+
+		key := string(buf[:n])
+		switch key {
+		case "q", "Q", "\x03", "\x1b":
+			state.DashboardCursor = cursor
+			return "quit"
+
+		case "\t", "\x1b[Z":
+			state.DashboardCursor = cursor
+			state.ActiveTab = nextTab(state.ActiveTab)
+			return ""
+
+		case "1":
+			state.ActiveTab = TabDashboard
+			return ""
+		case "2":
+			state.ActiveTab = TabIssues
+			return ""
+		case "3":
+			state.ActiveTab = TabPRs
+			return ""
+
+		case "r", "R":
+			needsRefresh = true
+
+		case "n", "N":
+			disableRawMode()
+			clearScreen()
+			renderHeader(state, false)
+			github.RunCommandPassthrough("gh", "issue", "create")
+			needsRefresh = true
+
+		case "p", "P":
+			disableRawMode()
+			clearScreen()
+			renderHeader(state, false)
+			github.RunCommandPassthrough("gh", "pr", "create")
+			needsRefresh = true
+
+		case "c", "C":
+			disableRawMode()
+			*cfg = configureHubcap(reader, state, *cfg)
+			needsRefresh = true
+
+		case "\x1b[A": // up
+			cursor--
+			if cursor < 0 {
+				cursor = len(rows) - 1
+			}
+			state.DashboardCursor = cursor
+
+		case "\x1b[B": // down
+			cursor++
+			if cursor >= len(rows) {
+				cursor = 0
+			}
+			state.DashboardCursor = cursor
+
+		case "\x1b[D": // left — collapse current section
+			if len(rows) > 0 {
+				sec := rows[cursor].sectionID
+				collapsed[sec] = true
+				rows = buildRows(data, collapsed)
+				// keep cursor on the section header
+				for i, r := range rows {
+					if r.isHeader && r.sectionID == sec {
+						cursor = i
+						break
+					}
+				}
+				state.DashboardCursor = cursor
+			}
+
+		case "\r", "\n":
+			if len(rows) == 0 {
+				continue
+			}
+			row := rows[cursor]
+			if row.isHeader {
+				// toggle collapse
+				collapsed[row.sectionID] = !collapsed[row.sectionID]
+				rows = buildRows(data, collapsed)
+				// keep cursor on header
+				for i, r := range rows {
+					if r.isHeader && r.sectionID == row.sectionID {
+						cursor = i
+						break
+					}
+				}
+				state.DashboardCursor = cursor
+			} else {
+				// open item
+				state.DashboardCursor = cursor
+				disableRawMode()
+				openDashboardItemByRow(reader, state, data, row)
+				needsRefresh = true
+			}
+		}
+	}
+}
+
+// openDashboardItemByRow opens the detail view for the item described by row.
+func openDashboardItemByRow(reader *bufio.Reader, state *AppState, data dashboardResult, row dashRow) {
+	switch {
+	case row.sectionID == secReviewRequests:
+		viewPR(reader, state, data.reviewRequests[row.itemIdx].Number)
+	case row.sectionID == secMyPRs:
+		viewPR(reader, state, data.myPRs[row.itemIdx].Number)
+	case row.sectionID == secAssigned:
+		viewIssue(reader, state, data.assignedIssues[row.itemIdx].Number)
+	case row.sectionID == secAvailable:
+		viewIssue(reader, state, data.availableIssues[row.itemIdx].Number)
+	}
+}
+
+// openDashboardItem finds an item by number across all sections and opens it.
+func openDashboardItem(reader *bufio.Reader, state *AppState, data dashboardResult, rows []dashRow, number int) {
+	for _, row := range rows {
+		if row.isHeader {
+			continue
+		}
+		switch row.sectionID {
+		case secReviewRequests:
+			if data.reviewRequests[row.itemIdx].Number == number {
+				viewPR(reader, state, number)
+				return
+			}
+		case secMyPRs:
+			if data.myPRs[row.itemIdx].Number == number {
+				viewPR(reader, state, number)
+				return
+			}
+		case secAssigned:
+			if data.assignedIssues[row.itemIdx].Number == number {
+				viewIssue(reader, state, number)
+				return
+			}
+		case secAvailable:
+			if data.availableIssues[row.itemIdx].Number == number {
+				viewIssue(reader, state, number)
+				return
+			}
+		}
+	}
+	fmt.Printf("Item #%d not found in current view.\n", number)
+	pause(reader)
 }
 
 // ensure fmt is used — will be used by render functions in later tasks.
