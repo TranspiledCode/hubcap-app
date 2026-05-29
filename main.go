@@ -9,6 +9,8 @@ import (
 	"hubcap/internal/github"
 )
 
+const version = "0.1.0"
+
 type TabID int
 
 const (
@@ -18,13 +20,14 @@ const (
 )
 
 type AppState struct {
-	ActiveTab       TabID
-	IssueFilters    github.Filters
-	PRFilters       github.PRFilters
-	IssueSelected   int
-	PRSelected      int
-	DashboardCursor int
-	Repo            string
+	ActiveTab         TabID
+	IssueFilters      github.Filters
+	PRFilters         github.PRFilters
+	IssueSelected     int
+	PRSelected        int
+	DashboardCursor   int
+	DashboardStatus   string
+	Repo              string
 }
 
 // nextTab cycles TabDashboard → TabIssues → TabPRs → TabDashboard.

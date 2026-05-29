@@ -60,6 +60,7 @@ func browseIssues(reader *bufio.Reader, state *AppState) string {
 		case "new":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			github.RunCommandPassthrough("gh", "issue", "create")
 		case "open":
 			viewIssue(reader, state, number)
@@ -107,26 +108,27 @@ func issueList(reader *bufio.Reader, state *AppState, issues []github.Issue) (in
 	defer fmt.Print("\033[?25h")
 
 	render := func() {
-		clearScreen()
+		fmt.Print("\033[H")
 		renderHeader(state, true)
 		fmt.Print("\033[?25l")
-		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
-		fmt.Printf("  %-8s %-58s %-22s %-34s\r\n", "---", "-----", "--------", "------")
+		fmt.Printf("  %-8s %-58s %-22s %-34s\033[K\r\n", "  #", "TITLE", "ASSIGNEE", "LABELS")
+		fmt.Printf("  %-8s %-58s %-22s %-34s\033[K\r\n", "---", "-----", "--------", "------")
 		for index, issue := range issues {
 			prefix := "  "
 			if index == selected {
-				prefix = "> "
+				prefix = colorSelect + ">" + colorReset + " "
 			}
 			indicator := stateIndicator(issue.State, false)
-			fmt.Printf("%s%s %-6d %-58s %-22s %-34s\r\n",
+			fmt.Printf("%s%s %-6d %-58s %-22s %-34s\033[K\r\n",
 				prefix, indicator, issue.Number,
 				truncate(cleanLine(issue.Title), 58),
 				truncate(joinUsers(issue.Assignees), 22),
 				truncate(joinLabels(issue.Labels), 34),
 			)
 		}
-		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
+		fmt.Print(hintSep(true))
+		fmt.Print(hintBar("↑↓", "move", "enter", "open", "tab", "switch", "n", "new", "f", "filters", "r", "refresh", "q", "quit") + "\033[K\r\n")
+		fmt.Print("\033[J")
 	}
 
 	render()
@@ -232,6 +234,7 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 					pause(reader)
 					continue
 				}
+				fmt.Println("Ctrl+C to cancel.")
 				if err := github.RunCommandPassthrough("gh", "issue", "develop",
 					strconv.Itoa(number), "--checkout", "--name", name); err != nil {
 					fmt.Println(err)
@@ -243,6 +246,7 @@ func viewIssue(reader *bufio.Reader, state *AppState, number int) {
 		case "Create PR":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			if err := github.RunCommandPassthrough("gh", "pr", "create", "--fill"); err != nil {
 				fmt.Println(err)
 				pause(reader)

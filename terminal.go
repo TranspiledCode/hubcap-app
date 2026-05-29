@@ -162,14 +162,14 @@ func menu(reader *bufio.Reader, options []string) string {
 	renderMenu := func() {
 		fmt.Print("\033[?25l")
 		for index, option := range options {
-			prefix := "  "
 			if index == selected {
-				prefix = "> "
+				fmt.Printf("%s> %s%s\033[K\r\n", colorSelect, option, colorReset)
+			} else {
+				fmt.Printf("  %s\033[K\r\n", option)
 			}
-			fmt.Printf("%s%s\033[K\r\n", prefix, option)
 		}
 		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter submit • 1-9 jump • q quit/back\033[K")
+		fmt.Print(hintBar("↑↓", "navigate", "enter", "select", "1-9", "jump", "q", "back") + "\033[K")
 		fmt.Printf("\033[%dF", len(options)+1)
 	}
 

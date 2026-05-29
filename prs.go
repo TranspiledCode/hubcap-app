@@ -62,6 +62,7 @@ func browsePRs(reader *bufio.Reader, state *AppState) string {
 		case "new":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			github.RunCommandPassthrough("gh", "pr", "create")
 		case "open":
 			viewPR(reader, state, number)
@@ -115,27 +116,28 @@ func prList(reader *bufio.Reader, state *AppState, prs []github.PullRequest) (in
 	defer fmt.Print("\033[?25h")
 
 	render := func() {
-		clearScreen()
+		fmt.Print("\033[H")
 		renderHeader(state, true)
 		fmt.Print("\033[?25l")
-		fmt.Printf("  %-8s %-58s %-12s %-9s %s\r\n", "  #", "TITLE", "AUTHOR", "STATUS", "CHECKS")
-		fmt.Printf("  %-8s %-58s %-12s %-9s %s\r\n", "-----", strings.Repeat("-", 58), "-----------", "--------", "------")
+		fmt.Printf("  %-8s %-58s %-12s %-9s %s\033[K\r\n", "  #", "TITLE", "AUTHOR", "STATUS", "CHECKS")
+		fmt.Printf("  %-8s %-58s %-12s %-9s %s\033[K\r\n", "-----", strings.Repeat("-", 58), "-----------", "--------", "------")
 		for index, pr := range prs {
 			prefix := "  "
 			if index == selected {
-				prefix = "> "
+				prefix = colorSelect + ">" + colorReset + " "
 			}
 			indicator := stateIndicator(pr.State, pr.IsDraft)
 			status := pr.State
 			if pr.IsDraft {
 				status = "draft"
 			}
-			fmt.Printf("%s%s %-6d %-58s %-12s %-9s %s\r\n",
+			fmt.Printf("%s%s %-6d %-58s %-12s %-9s %s\033[K\r\n",
 				prefix, indicator, pr.Number, truncate(pr.Title, 58),
 				pr.Author.Login, status, summarizeChecks(pr.StatusRollup))
 		}
-		fmt.Print("\r\n")
-		fmt.Print("↑/↓ navigate • enter open • tab switch tab • n new • f filters • r refresh • q quit\r\n")
+		fmt.Print(hintSep(true))
+		fmt.Print(hintBar("↑↓", "move", "enter", "open", "tab", "switch", "n", "new", "f", "filters", "r", "refresh", "q", "quit") + "\033[K\r\n")
+		fmt.Print("\033[J")
 	}
 
 	render()
@@ -231,6 +233,7 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 		case "Checkout branch":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			github.RunCommandPassthrough("gh", "pr", "checkout", strconv.Itoa(number))
 			return
 		case "Merge":
@@ -244,16 +247,19 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 			case "Merge commit":
 				clearScreen()
 				renderHeader(state, false)
+				fmt.Println("Ctrl+C to cancel.")
 				github.RunCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--merge")
 				return
 			case "Squash and merge":
 				clearScreen()
 				renderHeader(state, false)
+				fmt.Println("Ctrl+C to cancel.")
 				github.RunCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--squash")
 				return
 			case "Rebase and merge":
 				clearScreen()
 				renderHeader(state, false)
+				fmt.Println("Ctrl+C to cancel.")
 				github.RunCommandPassthrough("gh", "pr", "merge", strconv.Itoa(number), "--rebase")
 				return
 			case "Cancel", "":

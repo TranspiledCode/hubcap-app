@@ -128,6 +128,7 @@ func browseDashboard(reader *bufio.Reader, state *AppState, cfg *Config) string 
 			fmt.Println("Loading...")
 			data = fetchDashboard(*cfg)
 			rows = buildRows(data, collapsed)
+			state.DashboardStatus = dashboardStatus(data)
 			needsRefresh = false
 		}
 
@@ -196,12 +197,14 @@ func browseDashboard(reader *bufio.Reader, state *AppState, cfg *Config) string 
 		case "n", "N":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			github.RunCommandPassthrough("gh", "issue", "create")
 			needsRefresh = true
 
 		case "p", "P":
 			clearScreen()
 			renderHeader(state, false)
+			fmt.Println("Ctrl+C to cancel.")
 			github.RunCommandPassthrough("gh", "pr", "create")
 			needsRefresh = true
 
@@ -321,11 +324,11 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 	nl := "\n"
 	cr := ""
 	if rawMode {
-		nl = "\r\n"
-		cr = "\r"
+		nl = "\033[K\r\n"
+		fmt.Print("\033[H")
+	} else {
+		clearScreen()
 	}
-
-	clearScreen()
 	renderHeader(state, rawMode)
 
 	if len(rows) == 0 {
@@ -336,12 +339,15 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 	for i, row := range rows {
 		sel := ""
 		if i == cursor {
-			sel = "> "
+			sel = colorSelect + ">" + colorReset + " "
 		} else {
 			sel = "  "
 		}
 
 		if row.isHeader {
+			if i > 0 {
+				fmt.Print(nl)
+			}
 			count := sectionLen(data, row.sectionID)
 			errMark := ""
 			if data.errs[row.sectionID] != nil {
@@ -377,7 +383,11 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 				issue = data.availableIssues[row.itemIdx]
 			}
 			indicator := stateIndicator(issue.State, false)
-			labels := truncate(joinLabels(issue.Labels), 24)
+			rawLabels := truncate(joinLabels(issue.Labels), 24)
+			labels := colorGray + rawLabels + colorReset
+			if rawLabels != "-" {
+				labels = colorYellow + rawLabels + colorReset
+			}
 			fmt.Printf("  %s%s #%-5d %-48s %s%s%s",
 				sel, indicator, issue.Number, truncate(cleanLine(issue.Title), 48), labels, cr, nl)
 		}
@@ -385,9 +395,12 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 
 	fmt.Print(nl)
 	if rawMode {
-		fmt.Print("↑/↓ navigate • enter open • ← collapse • tab switch • n issue • p PR • r refresh • c config • q quit\r\n")
+		fmt.Print(hintSep(true))
+		fmt.Print(hintBar("↑↓", "move", "enter", "open", "←", "fold", "tab", "switch", "n", "issue", "p", "PR", "r", "refresh", "c", "config", "q", "quit") + "\033[K\r\n")
+		fmt.Print("\033[J")
 	} else {
-		fmt.Print("number open • n new issue • p new PR • r refresh • c config • q quit\n")
+		fmt.Print("\n" + hintSep(false))
+		fmt.Print(hintBar("number", "open", "n", "issue", "p", "PR", "r", "refresh", "c", "config", "q", "quit") + "\n")
 	}
 }
 
@@ -483,4 +496,21 @@ func configureAvailableFilter(reader *bufio.Reader, state *AppState, filters git
 			return filters
 		}
 	}
+}
+
+func dashboardStatus(data dashboardResult) string {
+	pipe := colorGray + "  ·  " + colorReset
+	item := func(n int, singular, plural string) string {
+		label := plural
+		if n == 1 {
+			label = singular
+		}
+		return colorSelect + strconv.Itoa(n) + colorReset + colorGray + " " + label + colorReset
+	}
+	return strings.Join([]string{
+		item(len(data.reviewRequests), "review request", "review requests"),
+		item(len(data.myPRs), "open PR", "open PRs"),
+		item(len(data.assignedIssues), "assigned", "assigned"),
+		item(len(data.availableIssues), "available", "available"),
+	}, pipe)
 }

@@ -17,59 +17,101 @@ const (
 	colorRed    = "\033[31m"
 	colorPurple = "\033[35m"
 	colorGray   = "\033[90m"
-	colorInvert = "\033[7m"
+	colorSelect = "\033[36m"           // cyan text
+	colorOrange = "\033[38;5;208m"    // normal orange text
+	colorTitle  = "\033[1;38;5;208m"  // bold orange text
+	colorSelBg  = "\033[48;5;23m"     // dark teal selection background
 )
 
 func renderHeader(state *AppState, rawMode bool) {
 	nl := "\n"
 	if rawMode {
-		nl = "\r\n"
+		nl = "\033[K\r\n"
 	}
-	sep := strings.Repeat("=", 52)
+	_, cols := termSize()
+	sep := strings.Repeat("─", cols)
 
-	myWorkLabel := "  1: My Work  "
-	issuesLabel := "  2: Issues  "
-	prsLabel := "  3: Pull Requests  "
+	plainMyWork := "  1: Dashboard  "
+	plainIssues := "  2: Issues  "
+	plainPRs := "  3: Pull Requests  "
+	myWorkLabel := plainMyWork
+	issuesLabel := plainIssues
+	prsLabel := plainPRs
 	switch state.ActiveTab {
 	case TabDashboard:
-		myWorkLabel = colorInvert + myWorkLabel + colorReset
+		myWorkLabel = colorSelect + myWorkLabel + colorReset
 	case TabIssues:
-		issuesLabel = colorInvert + issuesLabel + colorReset
+		issuesLabel = colorSelect + issuesLabel + colorReset
 	case TabPRs:
-		prsLabel = colorInvert + prsLabel + colorReset
+		prsLabel = colorSelect + prsLabel + colorReset
+	}
+	tabWidth := len(plainMyWork) + len(plainIssues) + len(plainPRs)
+	tabPad := ""
+	if cols > tabWidth {
+		tabPad = strings.Repeat(" ", cols-tabWidth)
 	}
 
-	fmt.Printf("GitHub TUI — %s%s", state.Repo, nl)
+	// Line 1: version (left) + help hint (right)
+	verText := "  v" + version
+	helpText := "[?] help  "
+	verLen := len([]rune(verText))
+	helpLen := len([]rune(helpText))
+	gap := cols - verLen - helpLen
+	if gap < 0 {
+		gap = 0
+	}
+	fmt.Printf("%s%s%s%s%s%s", colorTitle, verText, strings.Repeat(" ", gap), helpText, colorReset, nl)
+
+	// Line 2: centered title
+	title := "Hubcap — " + state.Repo
+	tLen := len([]rune(title))
+	lPad, rPad := 0, 0
+	if cols > tLen {
+		lPad = (cols - tLen) / 2
+		rPad = cols - tLen - lPad
+	}
+	fmt.Printf("%s%s%s%s%s%s", colorTitle, strings.Repeat(" ", lPad), title, strings.Repeat(" ", rPad), colorReset, nl)
+
+	// Line 3: blank
+	fmt.Printf("%s%s%s%s", colorTitle, strings.Repeat(" ", cols), colorReset, nl)
 	fmt.Printf("%s%s", sep, nl)
-	fmt.Printf("%s%s%s%s", myWorkLabel, issuesLabel, prsLabel, nl)
+	fmt.Printf("%s%s%s%s%s", myWorkLabel, issuesLabel, prsLabel, tabPad, nl)
 	fmt.Printf("%s%s", sep, nl)
 
+	dim := colorGray
+	rst := colorReset
+	pipe := colorGray + " | " + colorReset
 	switch state.ActiveTab {
 	case TabDashboard:
-		fmt.Printf("My Work%s", nl)
+		if state.DashboardStatus != "" {
+			fmt.Printf("%s%s", state.DashboardStatus, nl)
+		} else {
+			fmt.Printf("%sLoading...%s", colorGray, colorReset+nl)
+		}
 	case TabIssues:
 		f := state.IssueFilters
-		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
-			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+		fmt.Printf(dim+"State:"+rst+" %s"+pipe+dim+"Assignee:"+rst+" %s"+pipe+dim+"Label:"+rst+" %s"+pipe+dim+"Limit:"+rst+" "+colorGray+"%d"+rst+"%s",
+			colorState(f.State), colorVal(displayAny(f.Assignee)), colorVal(displayAny(f.Label)), f.Limit, nl)
 	case TabPRs:
 		f := state.PRFilters
-		fmt.Printf("State: %s | Assignee: %s | Label: %s | Limit: %d%s",
-			f.State, displayAny(f.Assignee), displayAny(f.Label), f.Limit, nl)
+		fmt.Printf(dim+"State:"+rst+" %s"+pipe+dim+"Assignee:"+rst+" %s"+pipe+dim+"Label:"+rst+" %s"+pipe+dim+"Limit:"+rst+" "+colorGray+"%d"+rst+"%s",
+			colorState(f.State), colorVal(displayAny(f.Assignee)), colorVal(displayAny(f.Label)), f.Limit, nl)
 	}
 	fmt.Printf("%s%s", sep, nl)
 	fmt.Print(nl)
 }
 
 func printIssueDetail(issue github.Issue, maxBodyRows, termCols int) {
+	sep := strings.Repeat("─", termCols)
 	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(sep)
 	fmt.Printf("State:     %s\n", issue.State)
 	fmt.Printf("Author:    %s\n", issue.Author.Login)
 	fmt.Printf("Created:   %s\n", strings.TrimSuffix(strings.Split(issue.CreatedAt, "T")[0], "Z"))
 	fmt.Printf("Assignees: %s\n", joinUsers(issue.Assignees))
-	fmt.Printf("Labels:    %s\n", joinLabels(issue.Labels))
+	fmt.Printf("Labels:    %s\n", coloredLabels(issue.Labels))
 	fmt.Printf("URL:       %s\n", issue.URL)
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(sep)
 	fmt.Println()
 
 	body := strings.TrimSpace(issue.Body)
@@ -96,7 +138,7 @@ func printIssuesTable(issues []github.Issue) {
 }
 
 func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
-	sep := strings.Repeat("=", 80)
+	sep := strings.Repeat("─", termCols)
 	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
 	fmt.Println(sep)
 
@@ -148,15 +190,7 @@ func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
 	fmt.Printf("%-12s %s%s%s\n", "Review:", reviewColor, reviewStr, colorReset)
 	fmt.Printf("%-12s %s\n", "Checks:", summarizeChecks(pr.StatusRollup))
 
-	labelStr := "—"
-	if len(pr.Labels) > 0 {
-		names := make([]string, len(pr.Labels))
-		for i, l := range pr.Labels {
-			names[i] = l.Name
-		}
-		labelStr = strings.Join(names, ", ")
-	}
-	fmt.Printf("%-12s %s\n", "Labels:", labelStr)
+	fmt.Printf("%-12s %s\n", "Labels:", coloredLabels(pr.Labels))
 	fmt.Printf("%-12s %s\n", "URL:", pr.URL)
 	fmt.Println(sep)
 
@@ -199,6 +233,68 @@ func summarizeChecks(checks []github.CheckRun) string {
 		return colorYellow + "…" + colorReset
 	}
 	return colorGreen + "✓" + colorReset
+}
+
+// hintBar formats alternating key/description pairs into a styled hint line,
+// auto-truncating so it never exceeds the terminal width.
+func hintBar(pairs ...string) string {
+	_, cols := termSize()
+	const sep = "  ·  "
+	used := 1 // leading space
+	var parts []string
+	for i := 0; i+1 < len(pairs); i += 2 {
+		k, d := pairs[i], pairs[i+1]
+		w := 3 + len([]rune(k)) + 1 + len([]rune(d)) // "[k] d"
+		if len(parts) > 0 {
+			w += len(sep)
+		}
+		if cols > 0 && used+w > cols {
+			break
+		}
+		used += w
+		kFmt := colorGray + "[" + colorReset + colorSelect + k + colorReset + colorGray + "]" + colorReset
+		parts = append(parts, kFmt+" "+colorGray+d+colorReset)
+	}
+	return " " + strings.Join(parts, colorGray+sep+colorReset)
+}
+
+// hintSep returns a full-width dim horizontal rule for use above hint bars.
+func hintSep(rawMode bool) string {
+	_, cols := termSize()
+	line := colorGray + strings.Repeat("─", cols) + colorReset
+	if rawMode {
+		return line + "\033[K\r\n"
+	}
+	return line + "\n"
+}
+
+func colorState(s string) string {
+	switch s {
+	case "open":
+		return colorGreen + s + colorReset
+	case "closed":
+		return colorRed + s + colorReset
+	default:
+		return s
+	}
+}
+
+func colorVal(s string) string {
+	if s == "any" {
+		return colorGray + s + colorReset
+	}
+	return colorYellow + s + colorReset
+}
+
+func coloredLabels(labels []github.Label) string {
+	if len(labels) == 0 {
+		return colorGray + "—" + colorReset
+	}
+	parts := make([]string, len(labels))
+	for i, l := range labels {
+		parts[i] = colorYellow + l.Name + colorReset
+	}
+	return strings.Join(parts, colorGray+", "+colorReset)
 }
 
 func joinUsers(users []github.User) string {
