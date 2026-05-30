@@ -13,8 +13,29 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// confirmAction prompts the user with a styled yes/no confirmation dialog.
+// Returns true if the user confirms, false otherwise (including on error).
+func confirmAction(title, description string, affirmative string) bool {
+	confirmed := false
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Description(description).
+				Affirmative(affirmative).
+				Negative("Cancel").
+				Value(&confirmed),
+		),
+	).WithTheme(huh.ThemeCatppuccin())
+	if err := form.Run(); err != nil {
+		return false
+	}
+	return confirmed
+}
 
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")

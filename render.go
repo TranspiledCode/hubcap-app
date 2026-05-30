@@ -24,7 +24,40 @@ var (
 	styleCyan    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	styleOrange  = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
 	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
-	styleSelBg   = lipgloss.NewStyle().Background(lipgloss.Color("23"))
+	styleSelBg = lipgloss.NewStyle().Background(lipgloss.Color("23"))
+
+	// Box styles for messages
+	errorBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("1")).
+			Padding(0, 1).
+			Foreground(lipgloss.Color("1"))
+	warningBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("3")).
+			Padding(0, 1).
+			Foreground(lipgloss.Color("3"))
+	successBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("2")).
+			Padding(0, 1).
+			Foreground(lipgloss.Color("2"))
+	infoBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("6")).
+			Padding(0, 1).
+			Foreground(lipgloss.Color("6"))
+
+	// Status bar style
+	statusBarStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("237")).
+			Foreground(lipgloss.Color("252")).
+			Padding(0, 1)
+	statusBarAccent = lipgloss.NewStyle().
+			Background(lipgloss.Color("237")).
+			Foreground(lipgloss.Color("208")).
+			Bold(true).
+			Padding(0, 1)
 
 	// Legacy compatibility constants (for gradual migration)
 	colorReset  = ""
@@ -306,15 +339,149 @@ func colorVal(s string) string {
 	return styleYellow.Render(s)
 }
 
+// labelStyle returns a lipgloss style for a label based on its name.
+// Labels are categorized by common prefixes (priority:, type:, effort:) or
+// well-known keywords like "bug", "enhancement", "feature".
+func labelStyle(name string) lipgloss.Style {
+	low := strings.ToLower(name)
+	switch {
+	case strings.Contains(low, "priority:high"),
+		strings.Contains(low, "priority:critical"),
+		strings.Contains(low, "type:bug"),
+		low == "bug",
+		low == "critical",
+		low == "blocker":
+		return styleRed
+	case strings.Contains(low, "priority:medium"),
+		strings.Contains(low, "type:question"),
+		low == "question":
+		return styleYellow
+	case strings.Contains(low, "priority:low"):
+		return styleGreen
+	case strings.Contains(low, "type:enhancement"),
+		strings.Contains(low, "type:feature"),
+		low == "enhancement",
+		low == "feature":
+		return styleCyan
+	case strings.Contains(low, "type:docs"),
+		strings.Contains(low, "documentation"),
+		low == "docs":
+		return stylePurple
+	case strings.HasPrefix(low, "effort:"),
+		strings.HasPrefix(low, "size:"):
+		return styleGray
+	default:
+		return styleOrange
+	}
+}
+
+// labelPriority returns a sort priority (lower = higher priority) for a label,
+// used to pick the dominant color when multiple labels are present.
+func labelPriority(name string) int {
+	low := strings.ToLower(name)
+	switch {
+	case strings.Contains(low, "priority:critical"), strings.Contains(low, "blocker"):
+		return 0
+	case strings.Contains(low, "priority:high"), strings.Contains(low, "type:bug"), low == "bug":
+		return 1
+	case strings.Contains(low, "priority:medium"):
+		return 2
+	case strings.Contains(low, "type:enhancement"), strings.Contains(low, "type:feature"):
+		return 3
+	case strings.Contains(low, "priority:low"):
+		return 4
+	default:
+		return 5
+	}
+}
+
+// dominantLabelStyle returns the lipgloss style of the highest-priority label
+// in the list, used for compact list views where a single color must represent
+// the row.
+func dominantLabelStyle(labels []github.Label) lipgloss.Style {
+	if len(labels) == 0 {
+		return styleGray
+	}
+	bestIdx, bestPrio := 0, 999
+	for i, l := range labels {
+		if p := labelPriority(l.Name); p < bestPrio {
+			bestPrio = p
+			bestIdx = i
+		}
+	}
+	return labelStyle(labels[bestIdx].Name)
+}
+
 func coloredLabels(labels []github.Label) string {
 	if len(labels) == 0 {
 		return styleGray.Render("—")
 	}
 	parts := make([]string, len(labels))
 	for i, l := range labels {
-		parts[i] = styleYellow.Render(l.Name)
+		parts[i] = labelStyle(l.Name).Render(l.Name)
 	}
 	return strings.Join(parts, styleGray.Render(", "))
+}
+
+// coloredLabelsCompact joins labels into a single colored string suitable for
+// list views. The whole string is colored using the dominant label color.
+func coloredLabelsCompact(labels []github.Label, maxWidth int) string {
+	if len(labels) == 0 {
+		return styleGray.Render(truncate("—", maxWidth))
+	}
+	plain := joinLabels(labels)
+	return dominantLabelStyle(labels).Render(truncate(plain, maxWidth))
+}
+
+// errorBox wraps a message in a red bordered box with an error icon.
+func errorBox(msg string) string {
+	return errorBoxStyle.Render("✗ " + msg)
+}
+
+// warningBox wraps a message in a yellow bordered box with a warning icon.
+func warningBox(msg string) string {
+	return warningBoxStyle.Render("⚠ " + msg)
+}
+
+// successBox wraps a message in a green bordered box with a check icon.
+func successBox(msg string) string {
+	return successBoxStyle.Render("✓ " + msg)
+}
+
+// infoBox wraps a message in a cyan bordered box with an info icon.
+func infoBox(msg string) string {
+	return infoBoxStyle.Render("ℹ " + msg)
+}
+
+// renderStatusBar prints a single-line status bar at the bottom showing repo,
+// active tab, and an optional stats string.
+func renderStatusBar(state *AppState, stats string) string {
+	tabName := "Dashboard"
+	switch state.ActiveTab {
+	case TabIssues:
+		tabName = "Issues"
+	case TabPRs:
+		tabName = "Pull Requests"
+	}
+	repo := state.Repo
+	if repo == "" {
+		repo = "(no repo)"
+	}
+	left := statusBarAccent.Render(tabName)
+	mid := statusBarStyle.Render(repo)
+	right := ""
+	if stats != "" {
+		right = statusBarStyle.Render(stats)
+	}
+
+	_, cols := termSize()
+	content := left + mid + right
+	plain := tabName + "  " + repo + "  " + stats
+	pad := cols - len([]rune(plain)) - 4
+	if pad < 0 {
+		pad = 0
+	}
+	return content + statusBarStyle.Render(strings.Repeat(" ", pad))
 }
 
 func joinUsers(users []github.User) string {
