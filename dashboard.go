@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"hubcap/internal/github"
+
+	"github.com/charmbracelet/huh"
 )
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -339,7 +341,7 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 	for i, row := range rows {
 		sel := ""
 		if i == cursor {
-			sel = colorSelect + ">" + colorReset + " "
+			sel = styleCyan.Render(">") + " "
 		} else {
 			sel = "  "
 		}
@@ -384,9 +386,9 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 			}
 			indicator := stateIndicator(issue.State, false)
 			rawLabels := truncate(joinLabels(issue.Labels), 24)
-			labels := colorGray + rawLabels + colorReset
+			labels := styleGray.Render(rawLabels)
 			if rawLabels != "-" {
-				labels = colorYellow + rawLabels + colorReset
+				labels = styleYellow.Render(rawLabels)
 			}
 			fmt.Printf("  %s%s #%-5d %-48s %s%s%s",
 				sel, indicator, issue.Number, truncate(cleanLine(issue.Title), 48), labels, cr, nl)
@@ -442,70 +444,84 @@ func configureHubcap(reader *bufio.Reader, state *AppState, cfg Config) Config {
 }
 
 func configureAvailableFilter(reader *bufio.Reader, state *AppState, filters github.Filters) github.Filters {
-	for {
-		clearScreen()
-		renderHeader(state, false)
-		fmt.Println("Available to Grab filter")
-		fmt.Println()
+	// Initialize with current values
+	stateChoice := filters.State
+	assigneeInput := filters.Assignee
+	labelInput := filters.Label
+	milestoneInput := filters.Milestone
+	limitInput := fmt.Sprintf("%d", filters.Limit)
+	var clearFilters bool
 
-		choice := menu(reader, []string{
-			"Change state",
-			"Change assignee",
-			"Change label",
-			"Change milestone",
-			"Change limit",
-			"Clear filter",
-			"Back",
-		})
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("State").
+				Options(
+					huh.NewOption("open", "open"),
+					huh.NewOption("closed", "closed"),
+					huh.NewOption("all", "all"),
+				).
+				Value(&stateChoice),
+			huh.NewInput().
+				Title("Assignee").
+				Placeholder("@me or blank for any").
+				Value(&assigneeInput),
+			huh.NewInput().
+				Title("Label").
+				Placeholder("Label name or blank for any").
+				Value(&labelInput),
+			huh.NewInput().
+				Title("Milestone").
+				Placeholder("Milestone title or blank for any").
+				Value(&milestoneInput),
+			huh.NewInput().
+				Title("Limit").
+				Placeholder(fmt.Sprintf("%d", filters.Limit)).
+				Value(&limitInput),
+			huh.NewConfirm().
+				Title("Clear all filters").
+				Value(&clearFilters),
+		),
+	).WithTheme(huh.ThemeCatppuccin())
 
-		switch choice {
-		case "Change state":
-			s := menu(reader, []string{"open", "closed", "all", "Back"})
-			if s != "" && s != "Back" {
-				filters.State = s
-			}
-		case "Change assignee":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, or blank for any: "))
-		case "Change label":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
-		case "Change milestone":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Milestone = strings.TrimSpace(prompt(reader, "Milestone title, or blank for any: "))
-		case "Change limit":
-			clearScreen()
-			renderHeader(state, false)
-			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
-			if value == "" {
-				continue
-			}
-			limit, err := strconv.Atoi(value)
-			if err != nil || limit <= 0 {
-				fmt.Println("Limit must be a positive number.")
-				pause(reader)
-				continue
-			}
+	if err := form.Run(); err != nil {
+		return filters // Return original on error/cancel
+	}
+
+	if clearFilters {
+		return github.Filters{State: "open", Limit: 25}
+	}
+
+	if stateChoice != "" {
+		filters.State = stateChoice
+	}
+	if assigneeInput != "" {
+		filters.Assignee = strings.TrimSpace(assigneeInput)
+	}
+	if labelInput != "" {
+		filters.Label = strings.TrimSpace(labelInput)
+	}
+	if milestoneInput != "" {
+		filters.Milestone = strings.TrimSpace(milestoneInput)
+	}
+	if limitInput != "" {
+		limit, err := strconv.Atoi(limitInput)
+		if err == nil && limit > 0 {
 			filters.Limit = limit
-		case "Clear filter":
-			filters = github.Filters{State: "open", Limit: 25}
-		case "Back", "":
-			return filters
 		}
 	}
+
+	return filters
 }
 
 func dashboardStatus(data dashboardResult) string {
-	pipe := colorGray + "  ·  " + colorReset
+	pipe := styleGray.Render("  ·  ")
 	item := func(n int, singular, plural string) string {
 		label := plural
 		if n == 1 {
 			label = singular
 		}
-		return colorSelect + strconv.Itoa(n) + colorReset + colorGray + " " + label + colorReset
+		return styleCyan.Render(strconv.Itoa(n)) + styleGray.Render(" "+label)
 	}
 	return strings.Join([]string{
 		item(len(data.reviewRequests), "review request", "review requests"),

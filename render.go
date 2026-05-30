@@ -8,19 +8,35 @@ import (
 	"text/tabwriter"
 
 	"hubcap/internal/github"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
-const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorRed    = "\033[31m"
-	colorPurple = "\033[35m"
-	colorGray   = "\033[90m"
-	colorSelect = "\033[36m"           // cyan text
-	colorOrange = "\033[38;5;208m"    // normal orange text
-	colorTitle  = "\033[1;38;5;208m"  // bold orange text
-	colorSelBg  = "\033[48;5;23m"     // dark teal selection background
+// Lipgloss styles
+var (
+	// Base colors
+	styleReset   = lipgloss.NewStyle()
+	styleGreen   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	styleYellow  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	styleRed     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	stylePurple  = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	styleGray    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleCyan    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styleOrange  = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	styleSelBg   = lipgloss.NewStyle().Background(lipgloss.Color("23"))
+
+	// Legacy compatibility constants (for gradual migration)
+	colorReset  = ""
+	colorGreen  = ""
+	colorYellow = ""
+	colorRed    = ""
+	colorPurple = ""
+	colorGray   = ""
+	colorSelect = ""
+	colorOrange = ""
+	colorTitle  = ""
+	colorSelBg  = ""
 )
 
 func renderHeader(state *AppState, rawMode bool) {
@@ -39,11 +55,11 @@ func renderHeader(state *AppState, rawMode bool) {
 	prsLabel := plainPRs
 	switch state.ActiveTab {
 	case TabDashboard:
-		myWorkLabel = colorSelect + myWorkLabel + colorReset
+		myWorkLabel = styleCyan.Render(myWorkLabel)
 	case TabIssues:
-		issuesLabel = colorSelect + issuesLabel + colorReset
+		issuesLabel = styleCyan.Render(issuesLabel)
 	case TabPRs:
-		prsLabel = colorSelect + prsLabel + colorReset
+		prsLabel = styleCyan.Render(prsLabel)
 	}
 	tabWidth := len(plainMyWork) + len(plainIssues) + len(plainPRs)
 	tabPad := ""
@@ -60,7 +76,7 @@ func renderHeader(state *AppState, rawMode bool) {
 	if gap < 0 {
 		gap = 0
 	}
-	fmt.Printf("%s%s%s%s%s%s", colorTitle, verText, strings.Repeat(" ", gap), helpText, colorReset, nl)
+	fmt.Printf("%s%s", styleTitle.Render(verText+strings.Repeat(" ", gap)+helpText), nl)
 
 	// Line 2: centered title
 	title := "Hubcap — " + state.Repo
@@ -70,32 +86,36 @@ func renderHeader(state *AppState, rawMode bool) {
 		lPad = (cols - tLen) / 2
 		rPad = cols - tLen - lPad
 	}
-	fmt.Printf("%s%s%s%s%s%s", colorTitle, strings.Repeat(" ", lPad), title, strings.Repeat(" ", rPad), colorReset, nl)
+	fmt.Printf("%s%s", styleTitle.Render(strings.Repeat(" ", lPad)+title+strings.Repeat(" ", rPad)), nl)
 
 	// Line 3: blank
-	fmt.Printf("%s%s%s%s", colorTitle, strings.Repeat(" ", cols), colorReset, nl)
+	fmt.Printf("%s%s", styleTitle.Render(strings.Repeat(" ", cols)), nl)
 	fmt.Printf("%s%s", sep, nl)
 	fmt.Printf("%s%s%s%s%s", myWorkLabel, issuesLabel, prsLabel, tabPad, nl)
 	fmt.Printf("%s%s", sep, nl)
 
-	dim := colorGray
-	rst := colorReset
-	pipe := colorGray + " | " + colorReset
+	dim := styleGray
 	switch state.ActiveTab {
 	case TabDashboard:
 		if state.DashboardStatus != "" {
 			fmt.Printf("%s%s", state.DashboardStatus, nl)
 		} else {
-			fmt.Printf("%sLoading...%s", colorGray, colorReset+nl)
+			fmt.Printf("%s%s", styleGray.Render("Loading..."), nl)
 		}
 	case TabIssues:
 		f := state.IssueFilters
-		fmt.Printf(dim+"State:"+rst+" %s"+pipe+dim+"Assignee:"+rst+" %s"+pipe+dim+"Label:"+rst+" %s"+pipe+dim+"Limit:"+rst+" "+colorGray+"%d"+rst+"%s",
-			colorState(f.State), colorVal(displayAny(f.Assignee)), colorVal(displayAny(f.Label)), f.Limit, nl)
+		fmt.Printf("%s %s %s %s %s %s %s %s %s",
+			dim.Render("State:"), colorState(f.State),
+			dim.Render("Assignee:"), colorVal(displayAny(f.Assignee)),
+			dim.Render("Label:"), colorVal(displayAny(f.Label)),
+			dim.Render("Limit:"), styleGray.Render(fmt.Sprintf("%d", f.Limit)), nl)
 	case TabPRs:
 		f := state.PRFilters
-		fmt.Printf(dim+"State:"+rst+" %s"+pipe+dim+"Assignee:"+rst+" %s"+pipe+dim+"Label:"+rst+" %s"+pipe+dim+"Limit:"+rst+" "+colorGray+"%d"+rst+"%s",
-			colorState(f.State), colorVal(displayAny(f.Assignee)), colorVal(displayAny(f.Label)), f.Limit, nl)
+		fmt.Printf("%s %s %s %s %s %s %s %s %s",
+			dim.Render("State:"), colorState(f.State),
+			dim.Render("Assignee:"), colorVal(displayAny(f.Assignee)),
+			dim.Render("Label:"), colorVal(displayAny(f.Label)),
+			dim.Render("Limit:"), styleGray.Render(fmt.Sprintf("%d", f.Limit)), nl)
 	}
 	fmt.Printf("%s%s", sep, nl)
 	fmt.Print(nl)
@@ -142,21 +162,21 @@ func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
 	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
 	fmt.Println(sep)
 
-	stateColor := colorGreen
+	stateColor := styleGreen
 	switch {
 	case pr.IsDraft:
-		stateColor = colorYellow
+		stateColor = styleYellow
 	case pr.State == "merged":
-		stateColor = colorPurple
+		stateColor = stylePurple
 	case pr.State == "closed":
-		stateColor = colorRed
+		stateColor = styleRed
 	}
 	stateStr := pr.State
 	if pr.IsDraft {
 		stateStr = "draft"
 	}
 
-	fmt.Printf("%-12s %s%s%s\n", "State:", stateColor, stateStr, colorReset)
+	fmt.Printf("%-12s %s\n", "State:", stateColor.Render(stateStr))
 	fmt.Printf("%-12s %s\n", "Author:", pr.Author.Login)
 	fmt.Printf("%-12s %s\n", "Branch:", pr.HeadRefName)
 
@@ -176,18 +196,18 @@ func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
 	}
 	fmt.Printf("%-12s %s\n", "Assignees:", assigneeStr)
 
-	reviewColor := colorYellow
+	reviewColor := styleYellow
 	switch pr.ReviewDecision {
 	case "APPROVED":
-		reviewColor = colorGreen
+		reviewColor = styleGreen
 	case "CHANGES_REQUESTED":
-		reviewColor = colorRed
+		reviewColor = styleRed
 	}
 	reviewStr := pr.ReviewDecision
 	if reviewStr == "" {
 		reviewStr = "—"
 	}
-	fmt.Printf("%-12s %s%s%s\n", "Review:", reviewColor, reviewStr, colorReset)
+	fmt.Printf("%-12s %s\n", "Review:", reviewColor.Render(reviewStr))
 	fmt.Printf("%-12s %s\n", "Checks:", summarizeChecks(pr.StatusRollup))
 
 	fmt.Printf("%-12s %s\n", "Labels:", coloredLabels(pr.Labels))
@@ -204,15 +224,15 @@ func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
 func stateIndicator(state string, isDraft bool) string {
 	switch {
 	case isDraft:
-		return colorYellow + "◐" + colorReset
+		return styleYellow.Render("◐")
 	case strings.EqualFold(state, "merged"):
-		return colorPurple + "✓" + colorReset
+		return stylePurple.Render("✓")
 	case strings.EqualFold(state, "closed"):
-		return colorRed + "✗" + colorReset
+		return styleRed.Render("✗")
 	case strings.EqualFold(state, "open"):
-		return colorGreen + "●" + colorReset
+		return styleGreen.Render("●")
 	default:
-		return colorGray + "○" + colorReset
+		return styleGray.Render("○")
 	}
 }
 
@@ -223,16 +243,16 @@ func summarizeChecks(checks []github.CheckRun) string {
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return colorRed + "✗" + colorReset
+			return styleRed.Render("✗")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return colorYellow + "…" + colorReset
+		return styleYellow.Render("…")
 	}
-	return colorGreen + "✓" + colorReset
+	return styleGreen.Render("✓")
 }
 
 // hintBar formats alternating key/description pairs into a styled hint line,
@@ -252,16 +272,16 @@ func hintBar(pairs ...string) string {
 			break
 		}
 		used += w
-		kFmt := colorGray + "[" + colorReset + colorSelect + k + colorReset + colorGray + "]" + colorReset
-		parts = append(parts, kFmt+" "+colorGray+d+colorReset)
+		kFmt := styleGray.Render("[" + styleCyan.Render(k) + "]")
+		parts = append(parts, kFmt+" "+styleGray.Render(d))
 	}
-	return " " + strings.Join(parts, colorGray+sep+colorReset)
+	return " " + strings.Join(parts, styleGray.Render(sep))
 }
 
 // hintSep returns a full-width dim horizontal rule for use above hint bars.
 func hintSep(rawMode bool) string {
 	_, cols := termSize()
-	line := colorGray + strings.Repeat("─", cols) + colorReset
+	line := styleGray.Render(strings.Repeat("─", cols))
 	if rawMode {
 		return line + "\033[K\r\n"
 	}
@@ -271,9 +291,9 @@ func hintSep(rawMode bool) string {
 func colorState(s string) string {
 	switch s {
 	case "open":
-		return colorGreen + s + colorReset
+		return styleGreen.Render(s)
 	case "closed":
-		return colorRed + s + colorReset
+		return styleRed.Render(s)
 	default:
 		return s
 	}
@@ -281,20 +301,20 @@ func colorState(s string) string {
 
 func colorVal(s string) string {
 	if s == "any" {
-		return colorGray + s + colorReset
+		return styleGray.Render(s)
 	}
-	return colorYellow + s + colorReset
+	return styleYellow.Render(s)
 }
 
 func coloredLabels(labels []github.Label) string {
 	if len(labels) == 0 {
-		return colorGray + "—" + colorReset
+		return styleGray.Render("—")
 	}
 	parts := make([]string, len(labels))
 	for i, l := range labels {
-		parts[i] = colorYellow + l.Name + colorReset
+		parts[i] = styleYellow.Render(l.Name)
 	}
-	return strings.Join(parts, colorGray+", "+colorReset)
+	return strings.Join(parts, styleGray.Render(", "))
 }
 
 func joinUsers(users []github.User) string {
@@ -342,7 +362,7 @@ func truncateLines(text string, maxVisualRows, termCols int) string {
 				return text
 			}
 			out := strings.TrimRight(strings.Join(lines[:i], "\n"), " \t")
-			return out + "\n" + colorGray + "… open in browser to read more" + colorReset
+			return out + "\n" + styleGray.Render("… open in browser to read more")
 		}
 		usedRows += lineRows
 	}
