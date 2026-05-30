@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"hubcap/internal/github"
+
+	"github.com/charmbracelet/huh"
 )
 
 func browsePRs(reader *bufio.Reader, state *AppState) string {
@@ -124,7 +126,7 @@ func prList(reader *bufio.Reader, state *AppState, prs []github.PullRequest) (in
 		for index, pr := range prs {
 			prefix := "  "
 			if index == selected {
-				prefix = colorSelect + ">" + colorReset + " "
+				prefix = styleCyan.Render(">") + " "
 			}
 			indicator := stateIndicator(pr.State, pr.IsDraft)
 			status := pr.State
@@ -306,67 +308,86 @@ func viewPR(reader *bufio.Reader, state *AppState, number int) {
 
 func configurePRFilters(reader *bufio.Reader, state *AppState) github.PRFilters {
 	filters := state.PRFilters
-	for {
-		clearScreen()
-		renderHeader(state, false)
 
-		choice := menu(reader, []string{
-			"Change state",
-			"Change assignee",
-			"Change label",
-			"Change draft",
-			"Change review status",
-			"Change limit",
-			"Clear filters",
-			"Back",
-		})
+	// Initialize with current values
+	stateChoice := filters.State
+	assigneeInput := filters.Assignee
+	labelInput := filters.Label
+	draftChoice := filters.Draft
+	reviewStatusInput := filters.ReviewStatus
+	limitInput := fmt.Sprintf("%d", filters.Limit)
+	var clearFilters bool
 
-		switch choice {
-		case "Change state":
-			s := menu(reader, []string{"open", "closed", "merged", "all", "Back"})
-			if s != "" && s != "Back" {
-				filters.State = s
-			}
-		case "Change assignee":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Assignee = strings.TrimSpace(prompt(reader, "Assignee, @me, or blank for any: "))
-		case "Change label":
-			clearScreen()
-			renderHeader(state, false)
-			filters.Label = strings.TrimSpace(prompt(reader, "Label name, or blank for any: "))
-		case "Change draft":
-			d := menu(reader, []string{"all", "draft only", "non-draft only", "Back"})
-			switch d {
-			case "all":
-				filters.Draft = ""
-			case "draft only":
-				filters.Draft = "true"
-			case "non-draft only":
-				filters.Draft = "false"
-			}
-		case "Change review status":
-			clearScreen()
-			renderHeader(state, false)
-			filters.ReviewStatus = strings.TrimSpace(prompt(reader, "Review status (approved, changes-requested, etc.), or blank for any: "))
-		case "Change limit":
-			clearScreen()
-			renderHeader(state, false)
-			value := strings.TrimSpace(prompt(reader, fmt.Sprintf("Limit [%d]: ", filters.Limit)))
-			if value == "" {
-				continue
-			}
-			limit, err := strconv.Atoi(value)
-			if err != nil || limit <= 0 {
-				fmt.Println("Limit must be a positive number.")
-				pause(reader)
-				continue
-			}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("State").
+				Options(
+					huh.NewOption("open", "open"),
+					huh.NewOption("closed", "closed"),
+					huh.NewOption("merged", "merged"),
+					huh.NewOption("all", "all"),
+				).
+				Value(&stateChoice),
+			huh.NewInput().
+				Title("Assignee").
+				Placeholder("@me or blank for any").
+				Value(&assigneeInput),
+			huh.NewInput().
+				Title("Label").
+				Placeholder("Label name or blank for any").
+				Value(&labelInput),
+			huh.NewSelect[string]().
+				Title("Draft").
+				Options(
+					huh.NewOption("all", ""),
+					huh.NewOption("draft only", "true"),
+					huh.NewOption("non-draft only", "false"),
+				).
+				Value(&draftChoice),
+			huh.NewInput().
+				Title("Review status").
+				Placeholder("approved, changes-requested, etc.").
+				Value(&reviewStatusInput),
+			huh.NewInput().
+				Title("Limit").
+				Placeholder(fmt.Sprintf("%d", filters.Limit)).
+				Value(&limitInput),
+			huh.NewConfirm().
+				Title("Clear all filters").
+				Value(&clearFilters),
+		),
+	).WithTheme(huh.ThemeCatppuccin())
+
+	if err := form.Run(); err != nil {
+		return filters // Return original on error/cancel
+	}
+
+	if clearFilters {
+		return github.PRFilters{State: "open", Limit: 50}
+	}
+
+	if stateChoice != "" {
+		filters.State = stateChoice
+	}
+	if assigneeInput != "" {
+		filters.Assignee = strings.TrimSpace(assigneeInput)
+	}
+	if labelInput != "" {
+		filters.Label = strings.TrimSpace(labelInput)
+	}
+	if draftChoice != "" {
+		filters.Draft = draftChoice
+	}
+	if reviewStatusInput != "" {
+		filters.ReviewStatus = strings.TrimSpace(reviewStatusInput)
+	}
+	if limitInput != "" {
+		limit, err := strconv.Atoi(limitInput)
+		if err == nil && limit > 0 {
 			filters.Limit = limit
-		case "Clear filters":
-			filters = github.PRFilters{State: "open", Limit: 50}
-		case "Back", "":
-			return filters
 		}
 	}
+
+	return filters
 }

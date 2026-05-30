@@ -10,6 +10,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func enableRawMode() error {
@@ -31,6 +35,42 @@ func prompt(reader *bufio.Reader, label string) string {
 		return ""
 	}
 	return strings.TrimRight(value, "\r\n")
+}
+
+var spinnerModel = spinner.New()
+var spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+
+func init() {
+	spinnerModel.Spinner = spinner.Dot
+	spinnerModel.Style = spinnerStyle
+}
+
+// startSpinner starts a spinner in a goroutine and returns a channel to stop it
+func startSpinner(message string) chan struct{} {
+	stopChan := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		frames := spinnerModel.Spinner.Frames
+		i := 0
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-ticker.C:
+				fmt.Printf("\r%s %s", spinnerStyle.Render(frames[i]), message)
+				i = (i + 1) % len(frames)
+			}
+		}
+	}()
+	return stopChan
+}
+
+func stopSpinner(stopChan chan struct{}) {
+	close(stopChan)
+	fmt.Print("\r")
+	// Clear the spinner line
+	fmt.Print(strings.Repeat(" ", 50) + "\r")
 }
 
 func pause(reader *bufio.Reader) {
@@ -163,7 +203,7 @@ func menu(reader *bufio.Reader, options []string) string {
 		fmt.Print("\033[?25l")
 		for index, option := range options {
 			if index == selected {
-				fmt.Printf("%s> %s%s\033[K\r\n", colorSelect, option, colorReset)
+				fmt.Printf("%s %s\033[K\r\n", styleCyan.Render(">"), option)
 			} else {
 				fmt.Printf("  %s\033[K\r\n", option)
 			}
