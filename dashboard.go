@@ -385,24 +385,24 @@ func renderDashboard(state *AppState, data dashboardResult, rows []dashRow, curs
 				issue = data.availableIssues[row.itemIdx]
 			}
 			indicator := stateIndicator(issue.State, false)
-			rawLabels := truncate(joinLabels(issue.Labels), 24)
-			labels := styleGray.Render(rawLabels)
-			if rawLabels != "-" {
-				labels = styleYellow.Render(rawLabels)
-			}
+			labels := coloredLabelsCompact(issue.Labels, 24)
 			fmt.Printf("  %s%s #%-5d %-48s %s%s%s",
 				sel, indicator, issue.Number, truncate(cleanLine(issue.Title), 48), labels, cr, nl)
 		}
 	}
 
 	fmt.Print(nl)
+	stats := fmt.Sprintf("%d reviews · %d PRs · %d assigned · %d available",
+		len(data.reviewRequests), len(data.myPRs), len(data.assignedIssues), len(data.availableIssues))
 	if rawMode {
 		fmt.Print(hintSep(true))
 		fmt.Print(hintBar("↑↓", "move", "enter", "open", "←", "fold", "tab", "switch", "n", "issue", "p", "PR", "r", "refresh", "c", "config", "q", "quit") + "\033[K\r\n")
+		fmt.Print(renderStatusBar(state, stats) + "\033[K\r\n")
 		fmt.Print("\033[J")
 	} else {
 		fmt.Print("\n" + hintSep(false))
 		fmt.Print(hintBar("number", "open", "n", "issue", "p", "PR", "r", "refresh", "c", "config", "q", "quit") + "\n")
+		fmt.Print(renderStatusBar(state, stats) + "\n")
 	}
 }
 
@@ -425,16 +425,23 @@ func configureHubcap(reader *bufio.Reader, state *AppState, cfg Config) Config {
 		case "Change \"Available to Grab\" filter":
 			cfg.AvailableFilter = configureAvailableFilter(reader, state, cfg.AvailableFilter)
 			if err := saveConfig(cfg); err != nil {
-				fmt.Println("Could not save config:", err)
+				fmt.Println(errorBox(fmt.Sprintf("Could not save config: %v", err)))
 				pause(reader)
 			}
 		case "Reset to defaults":
+			if !confirmAction(
+				"Reset configuration to defaults?",
+				"This will overwrite your current hubcap config.",
+				"Reset",
+			) {
+				continue
+			}
 			cfg = defaultConfig()
 			if err := saveConfig(cfg); err != nil {
-				fmt.Println("Could not save config:", err)
+				fmt.Println(errorBox(fmt.Sprintf("Could not save config: %v", err)))
 				pause(reader)
 			} else {
-				fmt.Println("Reset to defaults.")
+				fmt.Println(successBox("Reset to defaults."))
 				pause(reader)
 			}
 		case "Back", "":
@@ -446,63 +453,102 @@ func configureHubcap(reader *bufio.Reader, state *AppState, cfg Config) Config {
 func configureAvailableFilter(reader *bufio.Reader, state *AppState, filters github.Filters) github.Filters {
 	// Initialize with current values
 	stateChoice := filters.State
-	assigneeInput := filters.Assignee
+	availableAssignees, _ := github.FetchAssignees()
+	assigneeChoice := assigneeToChoice(filters.Assignee, availableAssignees)
+	assigneeCustom := ""
+	if assigneeChoice == "custom" {
+		assigneeCustom = filters.Assignee
+	}
 	labelInput := filters.Label
-	milestoneInput := filters.Milestone
+	selectedLabels := splitCSV(filters.Label)
 	limitInput := fmt.Sprintf("%d", filters.Limit)
-	var clearFilters bool
+	actionChoice := "save"
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("State").
-				Options(
-					huh.NewOption("open", "open"),
-					huh.NewOption("closed", "closed"),
-					huh.NewOption("all", "all"),
-				).
-				Value(&stateChoice),
-			huh.NewInput().
-				Title("Assignee").
-				Placeholder("@me or blank for any").
-				Value(&assigneeInput),
+	availableLabels, _ := github.FetchLabels()
+
+	groupFields := []huh.Field{
+		huh.NewSelect[string]().
+			Title("State").
+			Options(
+				huh.NewOption("open", "open"),
+				huh.NewOption("closed", "closed"),
+				huh.NewOption("all", "all"),
+			).
+			Value(&stateChoice),
+		huh.NewSelect[string]().
+			Title("Assignee").
+			Options(assigneeOptions(availableAssignees)...).
+			Value(&assigneeChoice),
+		huh.NewInput().
+			Title("Custom assignee").
+			Placeholder("GitHub username").
+			Value(&assigneeCustom).
+			DescriptionFunc(func() string {
+				if assigneeChoice == "custom" {
+					return "Required when Custom is selected."
+				}
+				return ""
+			}, &assigneeChoice),
+	}
+
+	if len(availableLabels) > 0 {
+		labelOptions := make([]huh.Option[string], 0, len(availableLabels))
+		for _, name := range availableLabels {
+			labelOptions = append(labelOptions, huh.NewOption(name, name))
+		}
+		height := len(labelOptions)
+		if height > 8 {
+			height = 8 // Limit visible rows for long lists
+		}
+		groupFields = append(groupFields,
+			huh.NewMultiSelect[string]().
+				Title("Labels").
+				Description("Space to toggle. Matches issues with ALL selected labels.").
+				Options(labelOptions...).
+				Height(height).
+				Value(&selectedLabels),
+		)
+	} else {
+		groupFields = append(groupFields,
 			huh.NewInput().
 				Title("Label").
-				Placeholder("Label name or blank for any").
+				Placeholder("Label name (comma-separated) or blank for any").
 				Value(&labelInput),
-			huh.NewInput().
-				Title("Milestone").
-				Placeholder("Milestone title or blank for any").
-				Value(&milestoneInput),
-			huh.NewInput().
-				Title("Limit").
-				Placeholder(fmt.Sprintf("%d", filters.Limit)).
-				Value(&limitInput),
-			huh.NewConfirm().
-				Title("Clear all filters").
-				Value(&clearFilters),
-		),
-	).WithTheme(huh.ThemeCatppuccin())
+		)
+	}
+
+	groupFields = append(groupFields,
+		huh.NewInput().
+			Title("Limit").
+			Placeholder(fmt.Sprintf("%d", filters.Limit)).
+			Value(&limitInput),
+		huh.NewSelect[string]().
+			Title("Action").
+			Options(
+				huh.NewOption("Save filters", "save"),
+				huh.NewOption("Reset to defaults", "reset"),
+			).
+			Value(&actionChoice),
+	)
+
+	form := huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
 
 	if err := form.Run(); err != nil {
 		return filters // Return original on error/cancel
 	}
 
-	if clearFilters {
+	if actionChoice == "reset" {
 		return github.Filters{State: "open", Limit: 25}
 	}
 
 	if stateChoice != "" {
 		filters.State = stateChoice
 	}
-	if assigneeInput != "" {
-		filters.Assignee = strings.TrimSpace(assigneeInput)
-	}
-	if labelInput != "" {
+	filters.Assignee = resolveAssignee(assigneeChoice, assigneeCustom)
+	if len(availableLabels) > 0 {
+		filters.Label = strings.Join(selectedLabels, ",")
+	} else if labelInput != "" {
 		filters.Label = strings.TrimSpace(labelInput)
-	}
-	if milestoneInput != "" {
-		filters.Milestone = strings.TrimSpace(milestoneInput)
 	}
 	if limitInput != "" {
 		limit, err := strconv.Atoi(limitInput)

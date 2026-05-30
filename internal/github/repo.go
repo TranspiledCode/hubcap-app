@@ -72,6 +72,42 @@ type PRFilters struct {
 	Limit        int
 }
 
+// FetchAssignees returns the list of users that can be assigned to issues/PRs
+// in the current repo (collaborators with write access).
+func FetchAssignees() ([]string, error) {
+	output, err := RunCommand("gh", "api", "repos/{owner}/{repo}/assignees", "--paginate")
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	if err := json.Unmarshal(output, &users); err != nil {
+		return nil, err
+	}
+	logins := make([]string, 0, len(users))
+	for _, u := range users {
+		logins = append(logins, u.Login)
+	}
+	return logins, nil
+}
+
+// FetchLabels returns the list of label names defined on the current repo.
+// Returns nil (no error) if labels cannot be fetched.
+func FetchLabels() ([]string, error) {
+	output, err := RunCommand("gh", "label", "list", "--limit", "200", "--json", "name")
+	if err != nil {
+		return nil, err
+	}
+	var labels []Label
+	if err := json.Unmarshal(output, &labels); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(labels))
+	for _, l := range labels {
+		names = append(names, l.Name)
+	}
+	return names, nil
+}
+
 func FetchRepo() string {
 	type repoResponse struct {
 		NameWithOwner string `json:"nameWithOwner"`
