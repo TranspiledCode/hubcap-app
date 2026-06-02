@@ -335,13 +335,20 @@ func (m AppModel) View() string {
 		body = m.dashboard.View()
 	}
 
-	// Build the footer hint bar
-	footer := footerView(m.activeTab, innerW)
+	// Build the footer hint bar — suppressed when a detail view is active
+	// (the detail view renders its own context-specific action bar)
+	var footer string
+	if !inDetail {
+		footer = footerView(m.activeTab, innerW)
+	}
 
-	// Count used lines: header + body lines + footer
+	// Count used lines: header + body + footer
 	headerLines := strings.Count(header, "\n")
 	bodyLines := strings.Count(body, "\n")
-	footerLines := strings.Count(footer, "\n") + 1
+	footerLines := 0
+	if footer != "" {
+		footerLines = strings.Count(footer, "\n") + 1
+	}
 	usedLines := headerLines + bodyLines + footerLines
 
 	// Fill remaining space so footer sticks to the bottom
