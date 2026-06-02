@@ -407,7 +407,7 @@ func renderIssueDetailContent(issue github.Issue, width int) string {
 	var b strings.Builder
 
 	b.WriteString(styleTitle.Render(issue.Title) + "\n\n")
-	b.WriteString(fmt.Sprintf("%s  #%d  %s  %s\n\n",
+	b.WriteString(fmt.Sprintf("%s  #%d  %s  %s\n",
 		stateIndicator(issue.State, false),
 		issue.Number,
 		styleGray.Render("opened by"),
