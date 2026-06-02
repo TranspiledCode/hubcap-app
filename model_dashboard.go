@@ -9,7 +9,6 @@ import (
 	"hubcap/internal/github"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,7 +19,7 @@ import (
 type dashRow struct {
 	isHeader  bool
 	sectionID int  // 0=reviewRequests, 1=myPRs, 2=assignedIssues, 3=availableIssues
-	itemIdx   int  // index within section (-1 for headers, -2 for empty-section placeholder)
+	itemIdx   int  // index within section (-1 for headers)
 	isIssue   bool // true = Issue row, false = PullRequest row
 }
 
@@ -41,9 +40,8 @@ var sectionNames = [4]string{
 // ── DashboardModel ────────────────────────────────────────────────────────────
 
 type DashboardModel struct {
-	spinner  spinner.Model
-	viewport viewport.Model
-	loading  bool
+	spinner spinner.Model
+	loading bool
 	loaded   bool
 	err      error
 	data     dashboardData
@@ -105,12 +103,14 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 		go fetch(2, func() (interface{}, error) {
 			return github.FetchIssues(github.Filters{Assignee: "@me", State: "open", Limit: 20})
 		})
+		cfg := m.cfg // capture for goroutine
 		go fetch(3, func() (interface{}, error) {
-			f := github.Filters{
-				State:    "open",
-				Limit:    20,
-				Assignee: "",
-				Label:    "",
+			f := cfg.AvailableFilter
+			if f.State == "" {
+				f.State = "open"
+			}
+			if f.Limit == 0 {
+				f.Limit = 20
 			}
 			return github.FetchIssues(f)
 		})
@@ -192,6 +192,27 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 			m.moveCursor(-1)
 		case "down", "j":
 			m.moveCursor(1)
+		case "enter", " ":
+			if len(m.rows) == 0 || m.cursor >= len(m.rows) {
+				break
+			}
+			row := m.rows[m.cursor]
+			if row.isHeader {
+				break
+			}
+			isIssue := row.isIssue
+			var number int
+			switch row.sectionID {
+			case secReviewRequests:
+				number = m.data.reviewRequests[row.itemIdx].Number
+			case secMyPRs:
+				number = m.data.myPRs[row.itemIdx].Number
+			case secAssigned:
+				number = m.data.assignedIssues[row.itemIdx].Number
+			case secAvailable:
+				number = m.data.availableIssues[row.itemIdx].Number
+			}
+			return m, func() tea.Msg { return openItemMsg{isIssue: isIssue, number: number} }
 		}
 	}
 
