@@ -420,29 +420,12 @@ func renderIssueDetailView(issue github.Issue, vp viewport.Model, actionMsg stri
 	b.WriteString(lipgloss.NewStyle().Margin(0, 2).Render(vp.View()))
 	b.WriteString("\n")
 
-	// Show action feedback
+	// Action feedback (success/error messages from issue actions)
 	if actionErr != nil {
 		b.WriteString(errorBox(actionErr.Error()))
 	} else if actionMsg != "" {
 		b.WriteString(successBox(actionMsg))
 	}
 
-	// Hint bar
-	closeOrReopen := "close"
-	if strings.EqualFold(issue.State, "closed") {
-		closeOrReopen = "reopen"
-	}
-	hints := hintBar(
-		"d", "develop",
-		"p", "PR",
-		"c", closeOrReopen,
-		"a", "assign",
-		"l", "label",
-		"o", "browser",
-		"u", "copy URL",
-		"r", "refresh",
-		"b", "back",
-	)
-	b.WriteString(hints)
 	return b.String()
 }

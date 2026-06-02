@@ -275,6 +275,59 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// detailActionFooter renders the context-specific footer shown when an issue or PR detail is open.
+// Uses the same styling as footerView so it visually replaces it.
+func detailActionFooter(m AppModel, width int) string {
+	footerBg := lipgloss.NewStyle().Background(lipgloss.Color("235"))
+	keyStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("208")).Bold(true)
+	descStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("244"))
+	sepStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("238"))
+	sep := sepStyle.Render(" · ")
+
+	var hints []string
+	addHint := func(key, desc string) {
+		hints = append(hints, keyStyle.Render("["+key+"]")+" "+descStyle.Render(desc))
+	}
+
+	switch {
+	case m.activeTab == TabIssues && m.issues.showDetail:
+		closeLabel := "close"
+		if strings.EqualFold(m.issues.detailIssue.State, "closed") {
+			closeLabel = "reopen"
+		}
+		addHint("d", "develop")
+		addHint("p", "PR")
+		addHint("c", closeLabel)
+		addHint("a", "assign")
+		addHint("l", "label")
+		addHint("o", "browser")
+		addHint("u", "copy URL")
+		addHint("r", "refresh")
+		addHint("b", "back")
+	case m.activeTab == TabPRs && m.prs.showDetail:
+		closeLabel := "close"
+		if m.prs.detailPR.State == "closed" {
+			closeLabel = "reopen"
+		}
+		addHint("c", "checkout")
+		addHint("m", "merge")
+		addHint("x", closeLabel)
+		addHint("o", "browser")
+		addHint("u", "copy URL")
+		addHint("r", "refresh")
+		addHint("b", "back")
+	}
+
+	line := footerBg.Render("  ") + strings.Join(hints, sep)
+	lineW := lipgloss.Width(line)
+	if lineW < width {
+		line += footerBg.Render(strings.Repeat(" ", width-lineW))
+	} else if lineW > width {
+		line = lipgloss.NewStyle().MaxWidth(width).Render(line)
+	}
+	return line
+}
+
 func footerView(activeTab TabID, width int) string {
 	footerBg := lipgloss.NewStyle().Background(lipgloss.Color("235"))
 	keyStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("208")).Bold(true)
@@ -334,20 +387,18 @@ func (m AppModel) View() string {
 		body = m.dashboard.View()
 	}
 
-	// Build the footer hint bar — suppressed when a detail view is active
-	// (the detail view renders its own context-specific action bar)
+	// Build the footer: detail-specific actions when in a detail view, global nav otherwise.
 	var footer string
-	if !inDetail {
+	if inDetail {
+		footer = detailActionFooter(m, innerW)
+	} else {
 		footer = footerView(m.activeTab, innerW)
 	}
 
 	// Count used lines: header + body + footer
 	headerLines := strings.Count(header, "\n")
 	bodyLines := strings.Count(body, "\n")
-	footerLines := 0
-	if footer != "" {
-		footerLines = strings.Count(footer, "\n") + 1
-	}
+	footerLines := strings.Count(footer, "\n") + 1
 	usedLines := headerLines + bodyLines + footerLines
 
 	// Fill remaining space so footer sticks to the bottom
