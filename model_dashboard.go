@@ -18,7 +18,7 @@ import (
 // dashRow is one entry in the flat navigable list rendered on screen.
 type dashRow struct {
 	isHeader  bool
-	sectionID int  // 0=reviewRequests, 1=myPRs, 2=assignedIssues, 3=availableIssues
+	sectionID int  // 0=reviewRequests, 1=myPRs, 2=assignedIssues (see sec* constants)
 	itemIdx   int  // index within section (-1 for headers)
 	isIssue   bool // true = Issue row, false = PullRequest row
 }
@@ -27,14 +27,12 @@ const (
 	secReviewRequests = 0
 	secMyPRs          = 1
 	secAssigned       = 2
-	secAvailable      = 3
 )
 
-var sectionNames = [4]string{
+var sectionNames = [3]string{
 	"REVIEW REQUESTS",
 	"MY OPEN PRs",
 	"ASSIGNED TO ME",
-	"AVAILABLE TO GRAB",
 }
 
 // ── DashboardModel ────────────────────────────────────────────────────────────
@@ -246,7 +244,7 @@ func (m DashboardModel) View() string {
 
 	var b strings.Builder
 
-	sectionIcons := [4]string{"⟳", "⎇", "◉", "○"}
+	sectionIcons := [3]string{"⟳", "⎇", "◉"}
 	sectionHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("208"))
@@ -266,11 +264,10 @@ func (m DashboardModel) View() string {
 	mutedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("244"))
 
-	sectionCounts := [4]int{
+	sectionCounts := [3]int{
 		len(m.data.reviewRequests),
 		len(m.data.myPRs),
 		len(m.data.assignedIssues),
-		0,
 	}
 
 	lastSectionID := -1
