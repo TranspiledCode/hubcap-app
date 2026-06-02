@@ -24,8 +24,6 @@ var (
 	styleCyan    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	styleOrange  = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
 	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
-	styleSelBg = lipgloss.NewStyle().Background(lipgloss.Color("23"))
-
 	// Box styles for messages
 	errorBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
