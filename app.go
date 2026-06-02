@@ -16,6 +16,12 @@ import (
 type switchTabMsg struct{ tab TabID }
 type quitMsg struct{}
 
+// openItemMsg switches to the Issues or PRs tab and opens a specific item's detail.
+type openItemMsg struct {
+	isIssue bool
+	number  int
+}
+
 // Data fetch results
 type issuesFetchedMsg struct {
 	issues []github.Issue
@@ -191,6 +197,25 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dashboard.loading = true
 				cmds = append(cmds, m.dashboard.fetchCmd(), m.dashboard.spinner.Tick)
 			}
+		}
+
+	case openItemMsg:
+		if msg.isIssue {
+			m.activeTab = TabIssues
+			m.issues.loadingDetail = true
+			if !m.issues.loaded {
+				m.issues.loading = true
+				cmds = append(cmds, m.issues.fetchCmd(), m.issues.spinner.Tick)
+			}
+			cmds = append(cmds, fetchIssueDetailCmd(msg.number), m.issues.spinner.Tick)
+		} else {
+			m.activeTab = TabPRs
+			m.prs.loadingDetail = true
+			if !m.prs.loaded {
+				m.prs.loading = true
+				cmds = append(cmds, m.prs.fetchCmd(), m.prs.spinner.Tick)
+			}
+			cmds = append(cmds, fetchPRDetailCmd(msg.number), m.prs.spinner.Tick)
 		}
 
 	case spinner.TickMsg:
