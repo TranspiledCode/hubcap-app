@@ -383,19 +383,5 @@ func renderPRDetailView(pr github.PullRequest, vp viewport.Model, actionMsg stri
 		b.WriteString(successBox(actionMsg))
 	}
 
-	closeOrReopen := "close"
-	if pr.State == "closed" {
-		closeOrReopen = "reopen"
-	}
-	hints := hintBar(
-		"c", "checkout",
-		"m", "merge",
-		"x", closeOrReopen,
-		"o", "browser",
-		"u", "copy URL",
-		"r", "refresh",
-		"b", "back",
-	)
-	b.WriteString(hints)
 	return b.String()
 }
