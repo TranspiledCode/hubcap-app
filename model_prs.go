@@ -149,7 +149,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 		m.detailPR = msg.pr
 		content := renderPRDetailContent(msg.pr, m.width)
-		m.detail = viewport.New(m.width-4, m.height-headerHeight()-4)
+		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-4)
 		m.detail.SetContent(content)
 		m.showDetail = true
 
@@ -173,7 +173,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(msg.Width-4, msg.Height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = msg.Width - 4
-			m.detail.Height = msg.Height - headerHeight() - 4
+			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 4
 		}
 
 	case spinner.TickMsg:
@@ -351,6 +351,7 @@ func (m PRsModel) View() string {
 	}
 
 	if m.showDetail {
+		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4))
 		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
@@ -359,32 +360,15 @@ func (m PRsModel) View() string {
 	return b.String()
 }
 
-func renderPRDetailContent(pr github.PullRequest, width int) string {
+// renderPRDetailContent builds scrollable body-only content for the viewport.
+// Title and metadata are handled by renderPRMetaStrip above the viewport.
+func renderPRDetailContent(pr github.PullRequest, _ int) string {
 	var b strings.Builder
-
-	b.WriteString(styleTitle.Render(pr.Title) + "\n\n")
-	b.WriteString(fmt.Sprintf("%s  #%d  %s  %s\n\n",
-		stateIndicator(pr.State, pr.IsDraft),
-		pr.Number,
-		styleGray.Render("by"),
-		pr.Author.Login,
-	))
-
-	if pr.HeadRefName != "" {
-		b.WriteString(styleGray.Render("Branch: ") + pr.HeadRefName + "\n")
-	}
-	b.WriteString(styleGray.Render("Checks: ") + summarizeChecks(pr.StatusRollup) + "\n")
-	if len(pr.Labels) > 0 {
-		b.WriteString(styleGray.Render("Labels: ") + coloredLabelsCompact(pr.Labels, width-10) + "\n")
-	}
-	b.WriteString("\n")
-
 	if pr.Body != "" {
 		b.WriteString(pr.Body + "\n")
 	} else {
 		b.WriteString(styleGray.Render("No description.") + "\n")
 	}
-
 	return b.String()
 }
 
