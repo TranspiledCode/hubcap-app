@@ -154,8 +154,23 @@ func renderHeader(state *AppState, rawMode bool) {
 	fmt.Print(nl)
 }
 
+const (
+	// headerHeightFull is the line count of headerView when the filter bar is shown.
+	// 3 (title band) + 3 (tab band) + 3 (filter band) = 9
+	headerHeightFull = 9
+
+	// headerHeightDetail is the line count when the filter bar is suppressed (detail views).
+	// 3 (title band) + 3 (tab band) = 6
+	headerHeightDetail = 6
+
+	// metaStripHeight is the fixed line count of the sticky metadata strip
+	// rendered above the viewport in detail views.
+	// title (1) + state row (1) + labels row (1) + separator (1) = 4
+	metaStripHeight = 4
+)
+
 // headerView returns the header as a string for use in bubbletea View() functions.
-func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int) string {
+func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool) string {
 	if width == 0 {
 		width = 80
 	}
@@ -252,58 +267,58 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	b.WriteString(blankTab + "\n")
 
 	// ── Line 3: filter/context bar ─────────────────────────────────────────
-	sep := filterSepStyle.Render("  │  ")
-	fmtFilter := func(key, val string) string {
-		active := val != "" && val != "any"
-		v := filterValStyle
-		if active {
-			v = filterValOnStyle
-		}
-		return filterKeyStyle.Render(key+":") + " " + v.Render(val)
-	}
-
-	blankFilter := filterBgStyle.Render(strings.Repeat(" ", width))
-	indent := filterBgStyle.Render("  ") // 2-char left indent, matches tab padding
-
-	var filterContent string
-	switch activeTab {
-	case TabIssues:
-		f := issueFilters
-		filterContent = indent +
-			fmtFilter("state", displayAny(f.State)) + sep +
-			fmtFilter("assignee", displayAny(f.Assignee)) + sep +
-			fmtFilter("label", displayAny(f.Label)) + sep +
-			fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
-			filterHintStyle.Render("   [f] to change filters")
-	case TabPRs:
-		f := prFilters
-		filterContent = indent +
-			fmtFilter("state", displayAny(f.State)) + sep +
-			fmtFilter("assignee", displayAny(f.Assignee)) + sep +
-			fmtFilter("label", displayAny(f.Label)) + sep +
-			fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
-			filterHintStyle.Render("   [f] to change filters")
-	case TabDashboard:
-		countStyle := lipgloss.NewStyle().Background(filterBg).Foreground(lipgloss.Color("205")).Bold(true)
-		countOrDash := func(n int) string {
-			if n == 0 {
-				return filterValStyle.Render("0")
+	if !detailActive {
+		sep := filterSepStyle.Render("  │  ")
+		fmtFilter := func(key, val string) string {
+			active := val != "" && val != "any"
+			v := filterValStyle
+			if active {
+				v = filterValOnStyle
 			}
-			return countStyle.Render(fmt.Sprintf("%d", n))
+			return filterKeyStyle.Render(key+":") + " " + v.Render(val)
 		}
-		filterContent = indent +
-			countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
-			countOrDash(counts.MyPRs) + filterKeyStyle.Render(" open PRs") + sep +
-			countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned") + sep +
-			countOrDash(counts.Available) + filterKeyStyle.Render(" available")
+		blankFilter := filterBgStyle.Render(strings.Repeat(" ", width))
+		indent := filterBgStyle.Render("  ")
+
+		var filterContent string
+		switch activeTab {
+		case TabIssues:
+			f := issueFilters
+			filterContent = indent +
+				fmtFilter("state", displayAny(f.State)) + sep +
+				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
+				fmtFilter("label", displayAny(f.Label)) + sep +
+				fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
+				filterHintStyle.Render("   [f] to change filters")
+		case TabPRs:
+			f := prFilters
+			filterContent = indent +
+				fmtFilter("state", displayAny(f.State)) + sep +
+				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
+				fmtFilter("label", displayAny(f.Label)) + sep +
+				fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
+				filterHintStyle.Render("   [f] to change filters")
+		case TabDashboard:
+			countStyle := lipgloss.NewStyle().Background(filterBg).Foreground(lipgloss.Color("205")).Bold(true)
+			countOrDash := func(n int) string {
+				if n == 0 {
+					return filterValStyle.Render("0")
+				}
+				return countStyle.Render(fmt.Sprintf("%d", n))
+			}
+			filterContent = indent +
+				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
+				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" open PRs") + sep +
+				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned")
+		}
+		filterLineWidth := lipgloss.Width(filterContent)
+		if filterLineWidth < width {
+			filterContent += filterBgStyle.Render(strings.Repeat(" ", width-filterLineWidth))
+		}
+		b.WriteString(blankFilter + "\n")
+		b.WriteString(filterContent + "\n")
+		b.WriteString(blankFilter + "\n")
 	}
-	filterLineWidth := lipgloss.Width(filterContent)
-	if filterLineWidth < width {
-		filterContent += filterBgStyle.Render(strings.Repeat(" ", width-filterLineWidth))
-	}
-	b.WriteString(blankFilter + "\n")
-	b.WriteString(filterContent + "\n")
-	b.WriteString(blankFilter + "\n")
 
 	return b.String()
 }

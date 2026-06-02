@@ -321,7 +321,9 @@ func (m AppModel) View() string {
 	innerW := m.width - 2
 	innerH := m.height - 2
 
-	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW)
+	inDetail := (m.activeTab == TabIssues && m.issues.showDetail) ||
+		(m.activeTab == TabPRs && m.prs.showDetail)
+	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail)
 
 	var body string
 	switch m.activeTab {
