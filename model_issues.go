@@ -142,7 +142,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 		m.detailIssue = msg.issue
 		content := renderIssueDetailContent(msg.issue, m.width)
-		m.detail = viewport.New(m.width-4, m.height-headerHeight()-4)
+		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-4)
 		m.detail.SetContent(content)
 		m.showDetail = true
 
@@ -166,7 +166,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		m.list.SetSize(msg.Width-4, msg.Height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = msg.Width - 4
-			m.detail.Height = msg.Height - headerHeight() - 4
+			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 4
 		}
 
 	case spinner.TickMsg:
@@ -387,8 +387,9 @@ func (m IssuesModel) View() string {
 		return b.String()
 	}
 
-	// Detail view
+	// Detail view: meta strip (fixed) above scrollable viewport
 	if m.showDetail {
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4))
 		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
@@ -401,32 +402,15 @@ func (m IssuesModel) View() string {
 // headerHeight returns the number of lines used by headerView() with filter bar shown.
 func headerHeight() int { return headerHeightFull }
 
-// renderIssueDetailContent builds the full text content for the viewport
-func renderIssueDetailContent(issue github.Issue, width int) string {
+// renderIssueDetailContent builds scrollable body-only content for the viewport.
+// Title and metadata are handled by renderIssueMetaStrip above the viewport.
+func renderIssueDetailContent(issue github.Issue, _ int) string {
 	var b strings.Builder
-
-	b.WriteString(styleTitle.Render(issue.Title) + "\n\n")
-	b.WriteString(fmt.Sprintf("%s  #%d  %s  %s\n",
-		stateIndicator(issue.State, false),
-		issue.Number,
-		styleGray.Render("opened by"),
-		issue.Author.Login,
-	))
-
-	if len(issue.Assignees) > 0 {
-		b.WriteString(styleGray.Render("Assignees: ") + joinUsers(issue.Assignees) + "\n")
-	}
-	if len(issue.Labels) > 0 {
-		b.WriteString(styleGray.Render("Labels:    ") + coloredLabelsCompact(issue.Labels, width-14) + "\n")
-	}
-	b.WriteString("\n")
-
 	if issue.Body != "" {
 		b.WriteString(issue.Body + "\n")
 	} else {
 		b.WriteString(styleGray.Render("No description.") + "\n")
 	}
-
 	return b.String()
 }
 
