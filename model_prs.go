@@ -207,7 +207,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				return m, fetchPRDetailCmd(m.detailPR.Number)
 			case "o":
 				num := m.detailPR.Number
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return github.RunCommandPassthrough("gh", "pr", "view",
 						fmt.Sprintf("%d", num), "--web")
 				}), func(err error) tea.Msg { return nil })
@@ -239,7 +239,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			case "c":
 				// Checkout branch
 				pr := m.detailPR
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return github.RunCommandPassthrough("gh", "pr", "checkout",
 						fmt.Sprintf("%d", pr.Number))
 				}), func(err error) tea.Msg {
@@ -252,7 +252,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				// Merge with type selection via huh
 				pr := m.detailPR
 				mergeType := "rebase" // default
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					form := huh.NewForm(huh.NewGroup(
 						huh.NewSelect[string]().
 							Title(fmt.Sprintf("Merge PR #%d", pr.Number)).
@@ -285,7 +285,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		switch msg.String() {
 		case "n":
 			if !m.list.SettingFilter() {
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return runCreatePRForm()
 				}), func(err error) tea.Msg {
 					m.loading = true
