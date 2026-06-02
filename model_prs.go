@@ -149,7 +149,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 		m.detailPR = msg.pr
 		content := renderPRDetailContent(msg.pr, m.width)
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-4)
+		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
 		m.detail.SetContent(content)
 		m.showDetail = true
 
@@ -173,7 +173,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(msg.Width-4, msg.Height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = msg.Width - 4
-			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 4
+			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 2
 		}
 
 	case spinner.TickMsg:

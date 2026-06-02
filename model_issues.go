@@ -142,7 +142,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 		m.detailIssue = msg.issue
 		content := renderIssueDetailContent(msg.issue, m.width)
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-4)
+		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
 		m.detail.SetContent(content)
 		m.showDetail = true
 
@@ -166,7 +166,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		m.list.SetSize(msg.Width-4, msg.Height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = msg.Width - 4
-			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 4
+			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 2
 		}
 
 	case spinner.TickMsg:
