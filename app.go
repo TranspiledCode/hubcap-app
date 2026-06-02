@@ -51,12 +51,11 @@ type dashboardFetchedMsg struct {
 type issueFiltersUpdatedMsg struct{ filters github.Filters }
 type prFiltersUpdatedMsg struct{ filters github.PRFilters }
 
-// dashboardData holds all sections of the dashboard
+// dashboardData holds the three personal sections of the My Work dashboard.
 type dashboardData struct {
 	reviewRequests []github.PullRequest
 	myPRs          []github.PullRequest
 	assignedIssues []github.Issue
-	availableIssues []github.Issue
 }
 
 // ── Root model ────────────────────────────────────────────────────────────────

@@ -70,7 +70,7 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 		var data dashboardData
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		var errs [4]error
+		var errs [3]error
 
 		fetch := func(i int, fn func() (interface{}, error)) {
 			defer wg.Done()
@@ -88,12 +88,10 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 				data.myPRs = result.([]github.PullRequest)
 			case 2:
 				data.assignedIssues = result.([]github.Issue)
-			case 3:
-				data.availableIssues = result.([]github.Issue)
 			}
 		}
 
-		wg.Add(4)
+		wg.Add(3)
 		go fetch(0, func() (interface{}, error) {
 			return github.FetchPRs(github.PRFilters{Search: "review-requested:@me", State: "open", Limit: 20})
 		})
@@ -102,17 +100,6 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 		})
 		go fetch(2, func() (interface{}, error) {
 			return github.FetchIssues(github.Filters{Assignee: "@me", State: "open", Limit: 20})
-		})
-		cfg := m.cfg // capture for goroutine
-		go fetch(3, func() (interface{}, error) {
-			f := cfg.AvailableFilter
-			if f.State == "" {
-				f.State = "open"
-			}
-			if f.Limit == 0 {
-				f.Limit = 20
-			}
-			return github.FetchIssues(f)
 		})
 		wg.Wait()
 
@@ -135,11 +122,10 @@ func buildDashRows(data dashboardData) []dashRow {
 		{secReviewRequests, len(data.reviewRequests), false},
 		{secMyPRs, len(data.myPRs), false},
 		{secAssigned, len(data.assignedIssues), true},
-		{secAvailable, len(data.availableIssues), true},
 	}
 	for _, sec := range sections {
 		if sec.count == 0 {
-			continue // hide empty sections entirely
+			continue
 		}
 		rows = append(rows, dashRow{isHeader: true, sectionID: sec.id, itemIdx: -1})
 		for i := 0; i < sec.count; i++ {
@@ -209,8 +195,6 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 				number = m.data.myPRs[row.itemIdx].Number
 			case secAssigned:
 				number = m.data.assignedIssues[row.itemIdx].Number
-			case secAvailable:
-				number = m.data.availableIssues[row.itemIdx].Number
 			}
 			return m, func() tea.Msg { return openItemMsg{isIssue: isIssue, number: number} }
 		}
@@ -239,7 +223,6 @@ type DashCounts struct {
 	ReviewRequests int
 	MyPRs          int
 	Assigned       int
-	Available      int
 }
 
 func (m DashboardModel) Counts() DashCounts {
@@ -250,7 +233,6 @@ func (m DashboardModel) Counts() DashCounts {
 		ReviewRequests: len(m.data.reviewRequests),
 		MyPRs:          len(m.data.myPRs),
 		Assigned:       len(m.data.assignedIssues),
-		Available:      len(m.data.availableIssues),
 	}
 }
 
@@ -264,57 +246,97 @@ func (m DashboardModel) View() string {
 
 	var b strings.Builder
 
-	headerStyle := lipgloss.NewStyle().
+	sectionIcons := [4]string{"⟳", "⎇", "◉", "○"}
+	sectionHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("208")).
-		MarginTop(1)
+		Foreground(lipgloss.Color("208"))
+	sectionCountStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("141"))
+	sectionDivStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("237"))
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("23")).
 		Foreground(lipgloss.Color("86"))
+	prBadgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("141")).
+		Bold(true)
+	isBadgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("83")).
+		Bold(true)
+	mutedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("244"))
 
-	sectionCounts := map[int]int{
-		secReviewRequests: len(m.data.reviewRequests),
-		secMyPRs:         len(m.data.myPRs),
-		secAssigned:      len(m.data.assignedIssues),
-		secAvailable:     len(m.data.availableIssues),
+	sectionCounts := [4]int{
+		len(m.data.reviewRequests),
+		len(m.data.myPRs),
+		len(m.data.assignedIssues),
+		0,
 	}
-	countStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+
+	lastSectionID := -1
 
 	for i, row := range m.rows {
 		if row.isHeader {
+			// Section divider (not before the very first section)
+			if lastSectionID >= 0 {
+				b.WriteString(sectionDivStyle.Render(strings.Repeat("─", 60)) + "\n")
+			}
+			lastSectionID = row.sectionID
+			icon := sectionIcons[row.sectionID]
+			name := sectionNames[row.sectionID]
 			count := sectionCounts[row.sectionID]
-			label := headerStyle.Render("  "+sectionNames[row.sectionID]) +
-				countStyle.Render(fmt.Sprintf(" (%d)", count))
-			b.WriteString(label + "\n")
+			b.WriteString(sectionHeaderStyle.Render(fmt.Sprintf("  %s %s ", icon, name)) +
+				sectionCountStyle.Render(fmt.Sprintf("(%d)", count)) + "\n")
 			continue
 		}
+
 		selected := i == m.cursor
 		prefix := "    "
 		if selected {
-			prefix = "  > "
+			prefix = "  ▶ "
 		}
 
 		var line string
 		switch row.sectionID {
-		case secReviewRequests, secMyPRs:
-			pr := m.data.reviewRequests
-			if row.sectionID == secMyPRs {
-				pr = m.data.myPRs
-			}
-			p := pr[row.itemIdx]
-			line = fmt.Sprintf("%s%s %-6d %-55s %s",
-				prefix, stateIndicator(p.State, p.IsDraft), p.Number,
-				truncate(p.Title, 55), coloredLabelsCompact(p.Labels, 30))
+		case secReviewRequests:
+			p := m.data.reviewRequests[row.itemIdx]
+			checksCol := summarizeChecks(p.StatusRollup)
+			authorCol := mutedStyle.Render("by " + truncate(p.Author.Login, 12))
+			line = fmt.Sprintf("%s%s %-6d %-50s  %s  %s",
+				prefix,
+				prBadgeStyle.Render("PR"),
+				p.Number,
+				truncate(cleanLine(p.Title), 50),
+				authorCol,
+				checksCol,
+			)
+		case secMyPRs:
+			p := m.data.myPRs[row.itemIdx]
+			checksCol := summarizeChecks(p.StatusRollup)
+			statusCol := func() string {
+				if p.IsDraft {
+					return mutedStyle.Render("draft")
+				}
+				return ""
+			}()
+			line = fmt.Sprintf("%s%s %-6d %-52s  %s  %s",
+				prefix,
+				prBadgeStyle.Render("PR"),
+				p.Number,
+				truncate(cleanLine(p.Title), 52),
+				statusCol,
+				checksCol,
+			)
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			line = fmt.Sprintf("%s%s %-6d %-55s %s",
-				prefix, stateIndicator(iss.State, false), iss.Number,
-				truncate(iss.Title, 55), coloredLabelsCompact(iss.Labels, 30))
-		case secAvailable:
-			iss := m.data.availableIssues[row.itemIdx]
-			line = fmt.Sprintf("%s%s %-6d %-55s %s",
-				prefix, stateIndicator(iss.State, false), iss.Number,
-				truncate(iss.Title, 55), coloredLabelsCompact(iss.Labels, 30))
+			labelCol := coloredLabelsCompact(iss.Labels, 25)
+			line = fmt.Sprintf("%s%s %-6d %-52s  %s",
+				prefix,
+				isBadgeStyle.Render("IS"),
+				iss.Number,
+				truncate(cleanLine(iss.Title), 52),
+				labelCol,
+			)
 		}
 
 		if selected {
