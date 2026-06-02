@@ -350,7 +350,8 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 	titleLine := pad(titleSt.Render("  " + truncate(issue.Title, width-4)))
 
 	// Line 2: state · number · author · assignee
-	stateStr := stateIndicator(issue.State, false) + "  " + func() string {
+	dotStyle := lipgloss.NewStyle().Background(bg)
+	stateStr := dotStyle.Render(stateIndicator(issue.State, false)) + "  " + func() string {
 		if strings.EqualFold(issue.State, "closed") {
 			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Bold(true).Render("CLOSED")
 		}
@@ -408,7 +409,8 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	titleLine := pad(titleSt.Render("  " + truncate(pr.Title, width-4)))
 
 	// Line 2: state · number · author · branch
-	stateStr := stateIndicator(pr.State, pr.IsDraft) + "  " + func() string {
+	dotStyle := lipgloss.NewStyle().Background(bg)
+	stateStr := dotStyle.Render(stateIndicator(pr.State, pr.IsDraft)) + "  " + func() string {
 		switch {
 		case pr.IsDraft:
 			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Bold(true).Render("DRAFT")
@@ -440,17 +442,22 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	}
 
 	checksStr := func() string {
-		raw := summarizeChecks(pr.StatusRollup)
-		switch {
-		case strings.Contains(raw, "✓"):
-			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Render("✓ checks passing")
-		case strings.Contains(raw, "✗"):
-			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Render("✗ checks failing")
-		case strings.Contains(raw, "…"):
-			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Render("… checks pending")
-		default:
+		if len(pr.StatusRollup) == 0 {
 			return ""
 		}
+		pending := false
+		for _, c := range pr.StatusRollup {
+			if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
+				return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Render("✗ checks failing")
+			}
+			if c.Status != "COMPLETED" {
+				pending = true
+			}
+		}
+		if pending {
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Render("… checks pending")
+		}
+		return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Render("✓ checks passing")
 	}()
 
 	var row3Parts []string
@@ -461,7 +468,7 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 		row3Parts = append(row3Parts, checksStr)
 	}
 	if len(pr.Labels) > 0 {
-		row3Parts = append(row3Parts, coloredLabelsCompact(pr.Labels, 40))
+		row3Parts = append(row3Parts, coloredLabelsCompact(pr.Labels, width-4))
 	}
 	var infoLine string
 	if len(row3Parts) > 0 {
