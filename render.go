@@ -323,6 +323,161 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	return b.String()
 }
 
+// renderIssueMetaStrip renders the fixed 4-line metadata strip shown above the
+// viewport in issue detail view. Always produces exactly metaStripHeight lines.
+func renderIssueMetaStrip(issue github.Issue, width int) string {
+	if width == 0 {
+		width = 80
+	}
+	bg := lipgloss.Color("234")
+	stripBg := lipgloss.NewStyle().Background(bg)
+	titleSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208")).Bold(true)
+	mutedSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("244"))
+	numSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("69"))
+	authorSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("252"))
+	sepSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("238"))
+	sep := sepSt.Render("  ·  ")
+
+	pad := func(s string) string {
+		w := lipgloss.Width(s)
+		if w < width {
+			return s + stripBg.Render(strings.Repeat(" ", width-w))
+		}
+		return s
+	}
+
+	// Line 1: title
+	titleLine := pad(titleSt.Render("  " + truncate(issue.Title, width-4)))
+
+	// Line 2: state · number · author · assignee
+	stateStr := stateIndicator(issue.State, false) + "  " + func() string {
+		if strings.EqualFold(issue.State, "closed") {
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Bold(true).Render("CLOSED")
+		}
+		return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Bold(true).Render("OPEN")
+	}()
+	stateLine := "  " + stateStr + sep +
+		numSt.Render(fmt.Sprintf("#%d", issue.Number)) + sep +
+		mutedSt.Render("opened by ") + authorSt.Render(issue.Author.Login)
+	if len(issue.Assignees) > 0 {
+		stateLine += sep + mutedSt.Render("assigned to ") + authorSt.Render(joinUsers(issue.Assignees))
+	}
+	stateLine = pad(stripBg.Render(stateLine))
+
+	// Line 3: labels (or blank padding line to keep height constant)
+	var labelsLine string
+	if len(issue.Labels) > 0 {
+		labelsLine = pad(stripBg.Render("  " + coloredLabelsCompact(issue.Labels, width-4)))
+	} else {
+		labelsLine = pad(stripBg.Render(""))
+	}
+
+	// Line 4: separator
+	sepLine := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("237")).
+		Render(strings.Repeat("─", width))
+
+	return titleLine + "\n" + stateLine + "\n" + labelsLine + "\n" + sepLine + "\n"
+}
+
+// renderPRMetaStrip renders the fixed 4-line metadata strip shown above the
+// viewport in PR detail view. Always produces exactly metaStripHeight lines.
+func renderPRMetaStrip(pr github.PullRequest, width int) string {
+	if width == 0 {
+		width = 80
+	}
+	bg := lipgloss.Color("234")
+	stripBg := lipgloss.NewStyle().Background(bg)
+	titleSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208")).Bold(true)
+	mutedSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("244"))
+	numSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("69"))
+	authorSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("252"))
+	sepSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("238"))
+	branchSt := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("252"))
+	sep := sepSt.Render("  ·  ")
+
+	pad := func(s string) string {
+		w := lipgloss.Width(s)
+		if w < width {
+			return s + stripBg.Render(strings.Repeat(" ", width-w))
+		}
+		return s
+	}
+
+	// Line 1: title
+	titleLine := pad(titleSt.Render("  " + truncate(pr.Title, width-4)))
+
+	// Line 2: state · number · author · branch
+	stateStr := stateIndicator(pr.State, pr.IsDraft) + "  " + func() string {
+		switch {
+		case pr.IsDraft:
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Bold(true).Render("DRAFT")
+		case strings.EqualFold(pr.State, "merged"):
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("141")).Bold(true).Render("MERGED")
+		case strings.EqualFold(pr.State, "closed"):
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Bold(true).Render("CLOSED")
+		default:
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Bold(true).Render("OPEN")
+		}
+	}()
+	stateLine := "  " + stateStr + sep +
+		numSt.Render(fmt.Sprintf("#%d", pr.Number)) + sep +
+		mutedSt.Render("by ") + authorSt.Render(pr.Author.Login)
+	if pr.HeadRefName != "" {
+		stateLine += sep + mutedSt.Render("⎇ ") + branchSt.Render(truncate(pr.HeadRefName, 35))
+	}
+	stateLine = pad(stripBg.Render(stateLine))
+
+	// Line 3: review decision · CI checks · labels (or blank if nothing)
+	var reviewStr string
+	switch pr.ReviewDecision {
+	case "APPROVED":
+		reviewStr = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Render("✓ APPROVED")
+	case "CHANGES_REQUESTED":
+		reviewStr = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Render("✗ CHANGES REQUESTED")
+	case "REVIEW_REQUIRED":
+		reviewStr = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Render("⟳ REVIEW REQUIRED")
+	}
+
+	checksStr := func() string {
+		raw := summarizeChecks(pr.StatusRollup)
+		switch {
+		case strings.Contains(raw, "✓"):
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("83")).Render("✓ checks passing")
+		case strings.Contains(raw, "✗"):
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")).Render("✗ checks failing")
+		case strings.Contains(raw, "…"):
+			return lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")).Render("… checks pending")
+		default:
+			return ""
+		}
+	}()
+
+	var row3Parts []string
+	if reviewStr != "" {
+		row3Parts = append(row3Parts, reviewStr)
+	}
+	if checksStr != "" {
+		row3Parts = append(row3Parts, checksStr)
+	}
+	if len(pr.Labels) > 0 {
+		row3Parts = append(row3Parts, coloredLabelsCompact(pr.Labels, 40))
+	}
+	var infoLine string
+	if len(row3Parts) > 0 {
+		infoLine = pad(stripBg.Render("  " + strings.Join(row3Parts, sep)))
+	} else {
+		infoLine = pad(stripBg.Render(""))
+	}
+
+	// Line 4: separator
+	sepLine := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("237")).
+		Render(strings.Repeat("─", width))
+
+	return titleLine + "\n" + stateLine + "\n" + infoLine + "\n" + sepLine + "\n"
+}
+
 func printIssueDetail(issue github.Issue, maxBodyRows, termCols int) {
 	sep := strings.Repeat("─", termCols)
 	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
