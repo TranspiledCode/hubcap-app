@@ -398,9 +398,8 @@ func (m IssuesModel) View() string {
 	return b.String()
 }
 
-// headerHeight returns the number of lines used by headerView()
-// 3 title bar + 3 tab bar + 3 filter bar = 9 lines
-func headerHeight() int { return 9 }
+// headerHeight returns the number of lines used by headerView() with filter bar shown.
+func headerHeight() int { return headerHeightFull }
 
 // renderIssueDetailContent builds the full text content for the viewport
 func renderIssueDetailContent(issue github.Issue, width int) string {
