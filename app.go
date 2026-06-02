@@ -132,6 +132,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard.width = innerW
 		m.dashboard.height = innerH
 
+	case execRepaintMsg:
+		// Force full repaint after any tea.Exec to fix BubbleTea's cursor tracking.
+		cmds = append(cmds, tea.ClearScreen)
+		if msg.inner != nil {
+			m2, cmd2 := m.Update(msg.inner)
+			if am, ok := m2.(AppModel); ok {
+				m = am
+			}
+			if cmd2 != nil {
+				cmds = append(cmds, cmd2)
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case issueFiltersUpdatedMsg:
 		m.issues.filters = msg.filters
 		m.issues.loading = true
@@ -158,7 +172,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
 				currentFilters := m.issues.filters
 				state := &AppState{IssueFilters: currentFilters}
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					state.IssueFilters = configureFilters(state)
 					return nil
 				}), func(err error) tea.Msg {
@@ -168,7 +182,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == TabPRs && !m.prs.loading && !m.prs.showDetail {
 				currentFilters := m.prs.filters
 				state := &AppState{PRFilters: currentFilters}
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					state.PRFilters = configurePRFilters(state)
 					return nil
 				}), func(err error) tea.Msg {
@@ -273,6 +287,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// execRepaintMsg wraps the result of any tea.Exec callback so the app can emit
+// tea.ClearScreen afterward, fixing BubbleTea's cursor-tracking after alt-screen suspend.
+type execRepaintMsg struct{ inner tea.Msg }
+
+// execWithRepaint wraps tea.Exec so every callback result is routed through
+// execRepaintMsg, triggering a full screen repaint on resume.
+func execWithRepaint(cmd tea.ExecCommand, fn func(error) tea.Msg) tea.Cmd {
+	return tea.Exec(cmd, func(err error) tea.Msg {
+		return execRepaintMsg{inner: fn(err)}
+	})
 }
 
 // detailActionFooter renders the context-specific footer shown when an issue or PR detail is open.

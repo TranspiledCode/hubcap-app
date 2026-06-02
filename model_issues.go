@@ -203,7 +203,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			case "o":
 				// Open in browser
 				num := m.detailIssue.Number
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return github.RunCommandPassthrough("gh", "issue", "view",
 						fmt.Sprintf("%d", num), "--web")
 				}), func(err error) tea.Msg { return nil })
@@ -246,7 +246,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				// Add label via huh input
 				issue := m.detailIssue
 				label := ""
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					form := huh.NewForm(huh.NewGroup(
 						huh.NewInput().
 							Title("Add label").
@@ -275,7 +275,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				issue := m.detailIssue
 				defaultBranch := deriveBranchName(issue.Number, issue.Title)
 				branchName := defaultBranch
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					form := huh.NewForm(huh.NewGroup(
 						huh.NewInput().
 							Title("Branch name").
@@ -300,7 +300,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				})
 			case "p":
 				// Create PR from current branch
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return github.RunCommandPassthrough("gh", "pr", "create", "--fill")
 				}), func(err error) tea.Msg {
 					if err != nil {
@@ -320,7 +320,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		switch msg.String() {
 		case "n":
 			if !m.list.SettingFilter() {
-				return m, tea.Exec(newFilterCmd(func() error {
+				return m, execWithRepaint(newFilterCmd(func() error {
 					return runCreateIssueForm()
 				}), func(err error) tea.Msg {
 					m.loading = true
