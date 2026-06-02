@@ -115,8 +115,16 @@ func (m AppModel) Init() tea.Cmd {
 	)
 }
 
+func inDetailMode(m AppModel) bool {
+	return (m.activeTab == TabIssues && m.issues.showDetail) ||
+		(m.activeTab == TabPRs && m.prs.showDetail)
+}
+
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// Snapshot detail state before processing — used at the end to detect transitions.
+	wasInDetail := inDetailMode(m)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -286,6 +294,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// When inDetail transitions (list↔detail), the header height changes by 3 lines.
+	// Force a full clear+repaint to prevent BubbleTea's diff renderer from misplacing content.
+	if wasInDetail != inDetailMode(m) {
+		cmds = append(cmds, tea.ClearScreen)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -399,8 +413,7 @@ func (m AppModel) View() string {
 	innerW := m.width - 2
 	innerH := m.height - 2
 
-	inDetail := (m.activeTab == TabIssues && m.issues.showDetail) ||
-		(m.activeTab == TabPRs && m.prs.showDetail)
+	inDetail := inDetailMode(m)
 	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail)
 
 	var body string
