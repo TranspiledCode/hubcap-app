@@ -7,17 +7,16 @@ import (
 	"hubcap/internal/github"
 )
 
-func TestBuildRows_AllSectionsPopulated(t *testing.T) {
-	data := dashboardResult{
+func TestBuildDashRows_AllSectionsPopulated(t *testing.T) {
+	data := dashboardData{
 		reviewRequests:  []github.PullRequest{{Number: 1}},
 		myPRs:           []github.PullRequest{{Number: 2}},
 		assignedIssues:  []github.Issue{{Number: 3}},
 		availableIssues: []github.Issue{{Number: 4}},
 	}
-	collapsed := [4]bool{}
-	rows := buildRows(data, collapsed)
+	rows := buildDashRows(data)
 
-	// 4 section headers + 4 items = 8 rows total
+	// 4 sections × (1 header + 1 item) = 8 rows
 	if len(rows) != 8 {
 		t.Fatalf("expected 8 rows, got %d", len(rows))
 	}
@@ -29,35 +28,35 @@ func TestBuildRows_AllSectionsPopulated(t *testing.T) {
 	}
 }
 
-func TestBuildRows_CollapsedSection(t *testing.T) {
-	data := dashboardResult{
-		reviewRequests:  []github.PullRequest{{Number: 1}, {Number: 2}},
-		myPRs:           []github.PullRequest{},
+func TestBuildDashRows_EmptySectionsHidden(t *testing.T) {
+	data := dashboardData{
+		reviewRequests:  []github.PullRequest{{Number: 1}},
+		myPRs:           []github.PullRequest{},   // empty — should be hidden
 		assignedIssues:  []github.Issue{{Number: 3}},
-		availableIssues: []github.Issue{},
+		availableIssues: []github.Issue{},           // empty — should be hidden
 	}
-	// Collapse section 0 (review requests); sections 1,3 are empty so hidden
-	collapsed := [4]bool{true, false, false, false}
-	rows := buildRows(data, collapsed)
+	rows := buildDashRows(data)
 
-	// Section 0 header only (collapsed, 2 items hidden)
-	// Section 1 hidden (empty)
-	// Section 2 header + 1 item
-	// Section 3 hidden (empty)
-	// = 3 rows
-	if len(rows) != 3 {
-		t.Fatalf("expected 3 rows, got %d", len(rows))
+	// section 0: header + 1 item = 2
+	// section 1: hidden (empty)
+	// section 2: header + 1 item = 2
+	// section 3: hidden (empty)
+	// total = 4
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows (2 non-empty sections × 2), got %d", len(rows))
 	}
-	if !rows[0].isHeader || rows[0].sectionID != 0 {
-		t.Error("expected first row to be section 0 header")
+	if rows[0].sectionID != secReviewRequests {
+		t.Errorf("expected first header to be secReviewRequests, got %d", rows[0].sectionID)
+	}
+	if rows[2].sectionID != secAssigned {
+		t.Errorf("expected third row header to be secAssigned, got %d", rows[2].sectionID)
 	}
 }
 
-func TestBuildRows_EmptySectionsHidden(t *testing.T) {
-	data := dashboardResult{} // all empty
-	collapsed := [4]bool{}
-	rows := buildRows(data, collapsed)
+func TestBuildDashRows_AllEmpty(t *testing.T) {
+	data := dashboardData{}
+	rows := buildDashRows(data)
 	if len(rows) != 0 {
-		t.Errorf("expected 0 rows for empty data, got %d", len(rows))
+		t.Errorf("expected 0 rows for all-empty data, got %d", len(rows))
 	}
 }
