@@ -37,6 +37,32 @@ func confirmAction(title, description string, affirmative string) bool {
 	return confirmed
 }
 
+// withSpinner runs a function while displaying a loading spinner
+func withSpinner(message string, fn func() error) error {
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	frame := 0
+
+	done := make(chan error)
+	go func() {
+		done <- fn()
+	}()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-done:
+			fmt.Print("\033[2K\r")
+			return err
+		case <-ticker.C:
+			fmt.Printf("\r%s %s", spinnerStyle.Render(spinnerFrames[frame%len(spinnerFrames)]), message)
+			frame++
+		}
+	}
+}
+
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")
 	cmd.Stdin = os.Stdin

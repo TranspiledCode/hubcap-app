@@ -142,6 +142,24 @@ func RunCommand(name string, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
+func CreateIssue(title, body string, labels []string) error {
+	args := []string{"issue", "create", "--title", title, "--body", body}
+	for _, l := range labels {
+		args = append(args, "--label", l)
+	}
+	_, err := RunCommand("gh", args...)
+	return err
+}
+
+func CreatePR(title, body, base string, draft bool) error {
+	args := []string{"pr", "create", "--title", title, "--body", body, "--base", base}
+	if draft {
+		args = append(args, "--draft")
+	}
+	_, err := RunCommand("gh", args...)
+	return err
+}
+
 func RunCommandPassthrough(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = os.Stdin

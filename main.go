@@ -2,11 +2,12 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 
 	"hubcap/internal/github"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const version = "0.1.0"
@@ -19,15 +20,16 @@ const (
 	TabPRs
 )
 
+// AppState is kept for compatibility with legacy code still being migrated
 type AppState struct {
-	ActiveTab         TabID
-	IssueFilters      github.Filters
-	PRFilters         github.PRFilters
-	IssueSelected     int
-	PRSelected        int
-	DashboardCursor   int
-	DashboardStatus   string
-	Repo              string
+	ActiveTab       TabID
+	IssueFilters    github.Filters
+	PRFilters       github.PRFilters
+	IssueSelected   int
+	PRSelected      int
+	DashboardCursor int
+	DashboardStatus string
+	Repo            string
 }
 
 // nextTab cycles TabDashboard → TabIssues → TabPRs → TabDashboard.
@@ -40,29 +42,20 @@ func main() {
 		fatal(err)
 	}
 
-	reader := bufio.NewReader(os.Stdin)
 	cfg := loadConfig()
+	repo := github.FetchRepo()
 
-	state := &AppState{
-		ActiveTab:    TabDashboard,
-		IssueFilters: github.Filters{State: "open", Limit: 50},
-		PRFilters:    github.PRFilters{State: "open", Limit: 50},
-	}
-	state.Repo = github.FetchRepo()
+	model := newAppModel(
+		repo,
+		cfg,
+		github.Filters{State: "open", Limit: 50},
+		github.PRFilters{State: "open", Limit: 50},
+	)
 
-	for {
-		var action string
-		switch state.ActiveTab {
-		case TabDashboard:
-			action = browseDashboard(reader, state, &cfg)
-		case TabIssues:
-			action = browseIssues(reader, state)
-		case TabPRs:
-			action = browsePRs(reader, state)
-		}
-		if action == "quit" {
-			fmt.Println("\nBye.")
-			return
-		}
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
+	fmt.Println("\nBye.")
 }
