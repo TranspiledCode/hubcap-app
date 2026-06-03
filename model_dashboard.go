@@ -148,8 +148,8 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 		m.rows = buildDashRows(m.data)
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width = msg.Width - 2
+		m.height = msg.Height - 2
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
