@@ -461,12 +461,14 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		return m, nil
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.list.SetSize(msg.Width-4, msg.Height-headerHeight()-2)
+		// Subtract the app border (1 char each side) so m.width/m.height
+		// reflect the usable content area, matching AppModel's innerW/innerH.
+		m.width = msg.Width - 2
+		m.height = msg.Height - 2
+		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
-			m.detail.Width = msg.Width - 4
-			m.detail.Height = msg.Height - headerHeightDetail - metaStripHeight - 2
+			m.detail.Width = m.width - 4
+			m.detail.Height = m.height - headerHeightDetail - metaStripHeight - 2
 		}
 
 	case spinner.TickMsg:
