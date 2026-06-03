@@ -11,38 +11,37 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-func configureFilters(state *AppState) github.Filters {
-	filters := state.IssueFilters
+// IssueFilterVals holds the mutable values bound to the embedded filter form.
+// It must be heap-allocated (use &IssueFilterVals{}) so huh's Value() pointers
+// remain stable across BubbleTea value-receiver model copies.
+type IssueFilterVals struct {
+	State          string
+	AssigneeChoice string
+	AssigneeCustom string
+	SelectedLabels []string
+	LabelInput     string
+	LimitInput     string
+	ActionChoice   string
+}
 
-	// Initialize with current values
-	stateChoice := filters.State
-
-	var availableAssignees []string
-	var availableLabels []string
-
-	// Fetch available options with spinners
-	withSpinner("Fetching assignees...", func() error {
-		var err error
-		availableAssignees, err = github.FetchAssignees()
-		return err
-	})
-
-	withSpinner("Fetching labels...", func() error {
-		var err error
-		availableLabels, err = github.FetchLabels()
-		return err
-	})
-
-	assigneeChoice := assigneeToChoice(filters.Assignee, availableAssignees)
-	assigneeCustom := ""
-	if assigneeChoice == "custom" {
-		assigneeCustom = filters.Assignee
+// InitIssueFilterVals pre-populates vals from the current filter settings so
+// the form opens with the user's existing selections.
+func InitIssueFilterVals(vals *IssueFilterVals, filters github.Filters, assignees []string) {
+	vals.State = filters.State
+	vals.AssigneeChoice = assigneeToChoice(filters.Assignee, assignees)
+	vals.AssigneeCustom = ""
+	if vals.AssigneeChoice == "custom" {
+		vals.AssigneeCustom = filters.Assignee
 	}
-	labelInput := filters.Label
-	selectedLabels := splitCSV(filters.Label)
-	limitInput := fmt.Sprintf("%d", filters.Limit)
-	actionChoice := "save"
+	vals.SelectedLabels = splitCSV(filters.Label)
+	vals.LabelInput = filters.Label
+	vals.LimitInput = fmt.Sprintf("%d", filters.Limit)
+	vals.ActionChoice = "save"
+}
 
+// BuildIssueFilterForm constructs a *huh.Form bound to vals. Call form.Init()
+// to start it; route messages through form.Update(msg) inside your model.
+func BuildIssueFilterForm(vals *IssueFilterVals, assignees []string, labels []string) *huh.Form {
 	groupFields := []huh.Field{
 		huh.NewSelect[string]().
 			Title("State").
@@ -51,31 +50,31 @@ func configureFilters(state *AppState) github.Filters {
 				huh.NewOption("closed", "closed"),
 				huh.NewOption("all", "all"),
 			).
-			Value(&stateChoice),
+			Value(&vals.State),
 		huh.NewSelect[string]().
 			Title("Assignee").
-			Options(assigneeOptions(availableAssignees)...).
-			Value(&assigneeChoice),
+			Options(assigneeOptions(assignees)...).
+			Value(&vals.AssigneeChoice),
 		huh.NewInput().
 			Title("Custom assignee").
 			Placeholder("GitHub username").
-			Value(&assigneeCustom).
+			Value(&vals.AssigneeCustom).
 			DescriptionFunc(func() string {
-				if assigneeChoice == "custom" {
+				if vals.AssigneeChoice == "custom" {
 					return "Required when Custom is selected."
 				}
 				return ""
-			}, &assigneeChoice),
+			}, &vals.AssigneeChoice),
 	}
 
-	if len(availableLabels) > 0 {
-		labelOptions := make([]huh.Option[string], 0, len(availableLabels))
-		for _, name := range availableLabels {
+	if len(labels) > 0 {
+		labelOptions := make([]huh.Option[string], 0, len(labels))
+		for _, name := range labels {
 			labelOptions = append(labelOptions, huh.NewOption(name, name))
 		}
 		height := len(labelOptions)
 		if height > 8 {
-			height = 8 // Limit visible rows for long lists
+			height = 8
 		}
 		groupFields = append(groupFields,
 			huh.NewMultiSelect[string]().
@@ -83,64 +82,62 @@ func configureFilters(state *AppState) github.Filters {
 				Description("Space to toggle. Matches issues with ALL selected labels.").
 				Options(labelOptions...).
 				Height(height).
-				Value(&selectedLabels),
+				Value(&vals.SelectedLabels),
 		)
 	} else {
 		groupFields = append(groupFields,
 			huh.NewInput().
 				Title("Label").
 				Placeholder("Label name (comma-separated) or blank for any").
-				Value(&labelInput),
+				Value(&vals.LabelInput),
 		)
 	}
 
 	groupFields = append(groupFields,
 		huh.NewInput().
 			Title("Limit").
-			Placeholder(fmt.Sprintf("%d", filters.Limit)).
-			Value(&limitInput),
+			Placeholder("e.g. 50").
+			Value(&vals.LimitInput),
 		huh.NewSelect[string]().
 			Title("Action").
 			Options(
 				huh.NewOption("Save filters", "save"),
 				huh.NewOption("Reset to defaults", "reset"),
 			).
-			Value(&actionChoice),
+			Value(&vals.ActionChoice),
 	)
 
-	form := huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+}
 
-	if err := form.Run(); err != nil {
-		return filters // Return original on error/cancel
-	}
-
-	if actionChoice == "reset" {
+// ResolveIssueFilters reads the completed vals and returns an updated Filters.
+func ResolveIssueFilters(vals *IssueFilterVals, current github.Filters, labels []string) github.Filters {
+	if vals.ActionChoice == "reset" {
 		return github.Filters{State: "open", Limit: 50}
 	}
-
-	if stateChoice != "" {
-		filters.State = stateChoice
+	filters := current
+	if vals.State != "" {
+		filters.State = vals.State
 	}
-	filters.Assignee = resolveAssignee(assigneeChoice, assigneeCustom)
-	if len(availableLabels) > 0 {
-		filters.Label = strings.Join(selectedLabels, ",")
-	} else if labelInput != "" {
-		filters.Label = strings.TrimSpace(labelInput)
+	filters.Assignee = resolveAssignee(vals.AssigneeChoice, vals.AssigneeCustom)
+	if len(labels) > 0 {
+		filters.Label = strings.Join(vals.SelectedLabels, ",")
+	} else if vals.LabelInput != "" {
+		filters.Label = strings.TrimSpace(vals.LabelInput)
+	} else {
+		filters.Label = ""
 	}
-	if limitInput != "" {
-		limit, err := strconv.Atoi(limitInput)
-		if err == nil && limit > 0 {
+	if vals.LimitInput != "" {
+		if limit, err := strconv.Atoi(vals.LimitInput); err == nil && limit > 0 {
 			filters.Limit = limit
 		}
 	}
-
 	return filters
 }
 
-// assigneeToChoice maps a stored assignee value to the matching select option
-// key used by the filter form. assignees is the list of known repo assignees;
-// any value found in that list is treated as a direct selection, otherwise
-// non-standard values fall back to "custom".
+// ── Shared form helpers ───────────────────────────────────────────────────────
+
+// assigneeToChoice maps a stored assignee value to the matching select option.
 func assigneeToChoice(assignee string, assignees []string) string {
 	switch assignee {
 	case "":
@@ -156,9 +153,7 @@ func assigneeToChoice(assignee string, assignees []string) string {
 	return "custom"
 }
 
-// assigneeOptions builds the dropdown options for the assignee field. It
-// always includes Any, @me, Custom… and prepends the fetched repo assignees
-// when available.
+// assigneeOptions builds the dropdown options for the assignee field.
 func assigneeOptions(assignees []string) []huh.Option[string] {
 	opts := []huh.Option[string]{
 		huh.NewOption("Any", ""),
@@ -180,8 +175,7 @@ func resolveAssignee(choice, custom string) string {
 	return choice
 }
 
-// splitCSV splits a comma-separated label string into a slice of trimmed values,
-// dropping empties.
+// splitCSV splits a comma-separated label string into trimmed, non-empty values.
 func splitCSV(s string) []string {
 	if s == "" {
 		return nil
