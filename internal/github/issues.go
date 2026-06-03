@@ -6,6 +6,7 @@ import (
 	"strconv"
 )
 
+
 func FetchIssues(filters Filters) ([]Issue, error) {
 	args := []string{
 		"issue", "list",
@@ -45,19 +46,28 @@ func FetchIssue(number int) (Issue, error) {
 }
 
 func CloseIssue(number int) error {
-	return RunCommandPassthrough("gh", "issue", "close", strconv.Itoa(number))
+	_, err := RunCommand("gh", "issue", "close", strconv.Itoa(number))
+	return err
 }
 
 func ReopenIssue(number int) error {
-	return RunCommandPassthrough("gh", "issue", "reopen", strconv.Itoa(number))
+	_, err := RunCommand("gh", "issue", "reopen", strconv.Itoa(number))
+	return err
 }
 
 func AssignIssueSelf(number int) error {
-	return RunCommandPassthrough("gh", "issue", "edit", strconv.Itoa(number), "--add-assignee", "@me")
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-assignee", "@me")
+	return err
 }
 
 func AddIssueLabel(number int, label string) error {
-	return RunCommandPassthrough("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
+	return err
+}
+
+func DevelopBranch(issueNumber int, branchName string) error {
+	_, err := RunCommand("gh", "issue", "develop", strconv.Itoa(issueNumber), "--checkout", "--name", branchName)
+	return err
 }
 
 func parseIssues(data []byte) ([]Issue, error) {

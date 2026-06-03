@@ -46,6 +46,7 @@ type PullRequest struct {
 	Assignees      []User     `json:"assignees"`
 	Labels         []Label    `json:"labels"`
 	HeadRefName    string     `json:"headRefName"`
+	BaseRefName    string     `json:"baseRefName"`
 	ReviewDecision string     `json:"reviewDecision"`
 	StatusRollup   []CheckRun `json:"statusCheckRollup"`
 	URL            string     `json:"url"`
@@ -158,6 +159,12 @@ func CreatePR(title, body, base string, draft bool) error {
 	}
 	_, err := RunCommand("gh", args...)
 	return err
+}
+
+// OpenURL opens the given URL in the system default browser without
+// suspending the terminal UI.
+func OpenURL(url string) {
+	_ = exec.Command("open", url).Start()
 }
 
 func RunCommandPassthrough(name string, args ...string) error {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -51,6 +52,14 @@ type dashboardFetchedMsg struct {
 type issueFiltersUpdatedMsg struct{ filters github.Filters }
 type prFiltersUpdatedMsg struct{ filters github.PRFilters }
 
+// filterDataFetchedMsg carries the result of fetching assignees + labels
+// needed to build a filter form without leaving the TUI.
+type filterDataFetchedMsg struct {
+	forPRs    bool
+	assignees []string
+	labels    []string
+}
+
 // dashboardData holds the three personal sections of the My Work dashboard.
 type dashboardData struct {
 	reviewRequests []github.PullRequest
@@ -88,6 +97,20 @@ type AppModel struct {
 	// Shared spinner for top-level loading
 	spinner spinner.Model
 	loading bool
+
+	// ── Filter form state ─────────────────────────────────────────────────────
+	// When the user presses "f", we fetch assignees + labels async, then show
+	// an embedded huh form. No terminal suspension required.
+
+	filterLoading bool      // true while fetching assignees + labels
+	filterForPRs  bool      // which tab's filters are being configured
+	filterForm    *huh.Form // non-nil while the form is showing
+	filterLabels  []string  // stored after fetch for use in ResolveFilters
+
+	// Heap-allocated value containers — their addresses are stable across
+	// BubbleTea model copies so huh's Value() pointers remain valid.
+	issueFilterVals *IssueFilterVals
+	prFilterVals    *PRFilterVals
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters) AppModel {
@@ -96,14 +119,16 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 
 	return AppModel{
-		activeTab: TabDashboard,
-		screen:    ScreenList,
-		repo:      repo,
-		cfg:       cfg,
-		spinner:   s,
-		issues:    newIssuesModel(issueFilters),
-		prs:       newPRsModel(prFilters),
-		dashboard: newDashboardModel(cfg),
+		activeTab:       TabDashboard,
+		screen:          ScreenList,
+		repo:            repo,
+		cfg:             cfg,
+		spinner:         s,
+		issues:          newIssuesModel(issueFilters),
+		prs:             newPRsModel(prFilters),
+		dashboard:       newDashboardModel(cfg),
+		issueFilterVals: &IssueFilterVals{},
+		prFilterVals:    &PRFilterVals{},
 	}
 }
 
@@ -120,11 +145,59 @@ func inDetailMode(m AppModel) bool {
 		(m.activeTab == TabPRs && m.prs.showDetail)
 }
 
+// hasActiveForm returns true when any sub-model or the app-level filter form
+// has an active huh form. Used to suppress global key shortcuts that would
+// conflict with form navigation (tab to switch tabs vs. tab to next field).
+func (m AppModel) hasActiveForm() bool {
+	return m.filterForm != nil ||
+		m.filterLoading ||
+		m.issues.activeForm != nil ||
+		m.prs.activeForm != nil
+}
+
+// fetchFilterDataCmd fetches assignees and labels in the background so the
+// filter form can be shown inline without suspending the TUI.
+func fetchFilterDataCmd(forPRs bool) tea.Cmd {
+	return func() tea.Msg {
+		// Errors are non-fatal; the form falls back to plain text inputs.
+		assignees, _ := github.FetchAssignees()
+		labels, _ := github.FetchLabels()
+		return filterDataFetchedMsg{
+			forPRs:    forPRs,
+			assignees: assignees,
+			labels:    labels,
+		}
+	}
+}
+
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// Snapshot detail state before processing — used at the end to detect transitions.
+	// Snapshot detail state before processing — used to detect header changes.
 	wasInDetail := inDetailMode(m)
+
+	// ── Filter form takes priority ────────────────────────────────────────────
+	// Route all messages to the active filter form exclusively.
+	if m.filterForm != nil {
+		form, cmd := m.filterForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.filterForm = f
+		}
+		switch m.filterForm.State {
+		case huh.StateCompleted:
+			m.filterForm = nil
+			if m.filterForPRs {
+				newFilters := ResolvePRFilters(m.prFilterVals, m.prs.filters, m.filterLabels)
+				return m, func() tea.Msg { return prFiltersUpdatedMsg{filters: newFilters} }
+			}
+			newFilters := ResolveIssueFilters(m.issueFilterVals, m.issues.filters, m.filterLabels)
+			return m, func() tea.Msg { return issueFiltersUpdatedMsg{filters: newFilters} }
+		case huh.StateAborted:
+			m.filterForm = nil
+			return m, nil
+		}
+		return m, cmd
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -140,19 +213,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard.width = innerW
 		m.dashboard.height = innerH
 
-	case execRepaintMsg:
-		// Force full repaint after any tea.Exec to fix BubbleTea's cursor tracking.
-		cmds = append(cmds, tea.ClearScreen)
-		if msg.inner != nil {
-			m2, cmd2 := m.Update(msg.inner)
-			if am, ok := m2.(AppModel); ok {
-				m = am
-			}
-			if cmd2 != nil {
-				cmds = append(cmds, cmd2)
-			}
+	case filterDataFetchedMsg:
+		m.filterLoading = false
+		m.filterLabels = msg.labels
+		if msg.forPRs {
+			InitPRFilterVals(m.prFilterVals, m.prs.filters, msg.assignees)
+			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels).
+				WithWidth(m.width - 8)
+		} else {
+			InitIssueFilterVals(m.issueFilterVals, m.issues.filters, msg.assignees)
+			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels).
+				WithWidth(m.width - 8)
 		}
-		return m, tea.Batch(cmds...)
+		return m, m.filterForm.Init()
 
 	case issueFiltersUpdatedMsg:
 		m.issues.filters = msg.filters
@@ -171,31 +244,30 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
-			next := nextTab(m.activeTab)
-			return m, func() tea.Msg { return switchTabMsg{tab: next} }
+			// Don't switch tabs when a sub-model form is open — let the form
+			// use tab for field navigation.
+			if !m.hasActiveForm() {
+				next := nextTab(m.activeTab)
+				return m, func() tea.Msg { return switchTabMsg{tab: next} }
+			}
 		case "shift+tab":
-			prev := (m.activeTab + 2) % 3
-			return m, func() tea.Msg { return switchTabMsg{tab: prev} }
+			if !m.hasActiveForm() {
+				prev := (m.activeTab + 2) % 3
+				return m, func() tea.Msg { return switchTabMsg{tab: prev} }
+			}
 		case "f":
+			if m.hasActiveForm() {
+				break
+			}
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
-				currentFilters := m.issues.filters
-				state := &AppState{IssueFilters: currentFilters}
-				return m, execWithRepaint(newFilterCmd(func() error {
-					state.IssueFilters = configureFilters(state)
-					return nil
-				}), func(err error) tea.Msg {
-					return issueFiltersUpdatedMsg{filters: state.IssueFilters}
-				})
+				m.filterLoading = true
+				m.filterForPRs = false
+				return m, tea.Batch(fetchFilterDataCmd(false), m.spinner.Tick)
 			}
 			if m.activeTab == TabPRs && !m.prs.loading && !m.prs.showDetail {
-				currentFilters := m.prs.filters
-				state := &AppState{PRFilters: currentFilters}
-				return m, execWithRepaint(newFilterCmd(func() error {
-					state.PRFilters = configurePRFilters(state)
-					return nil
-				}), func(err error) tea.Msg {
-					return prFiltersUpdatedMsg{filters: state.PRFilters}
-				})
+				m.filterLoading = true
+				m.filterForPRs = true
+				return m, tea.Batch(fetchFilterDataCmd(true), m.spinner.Tick)
 			}
 		}
 		_ = msg
@@ -240,9 +312,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		cmds = append(cmds, cmd)
+		// Only keep the app-level spinner alive while fetching filter data.
+		if m.filterLoading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	// Delegate to active sub-model
@@ -253,7 +328,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		// Handle navigation out of issues
 		if m.issues.action == "switch" {
 			m.issues.action = ""
 			next := nextTab(m.activeTab)
@@ -303,21 +377,75 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// execRepaintMsg wraps the result of any tea.Exec callback so the app can emit
-// tea.ClearScreen afterward, fixing BubbleTea's cursor-tracking after alt-screen suspend.
-type execRepaintMsg struct{ inner tea.Msg }
-
-// execWithRepaint wraps tea.Exec so every callback result is routed through
-// execRepaintMsg, triggering a full screen repaint on resume.
-func execWithRepaint(cmd tea.ExecCommand, fn func(error) tea.Msg) tea.Cmd {
-	return tea.Exec(cmd, func(err error) tea.Msg {
-		return execRepaintMsg{inner: fn(err)}
-	})
+// footerPendingToast renders a single-line "in progress" indicator in the
+// footer bar using the model's spinner for animation.
+func footerPendingToast(spinnerView string, msg string, width int) string {
+	bg := lipgloss.NewStyle().Background(lipgloss.Color("235"))
+	spin := lipgloss.NewStyle().
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("86")) // green spinner
+	txt := lipgloss.NewStyle().
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("244")) // muted text while working
+	line := bg.Render("  ") + spin.Render(spinnerView) + " " + txt.Render(msg)
+	w := lipgloss.Width(line)
+	if w < width {
+		line += bg.Render(strings.Repeat(" ", width-w))
+	}
+	return line
 }
 
-// detailActionFooter renders the context-specific footer shown when an issue or PR detail is open.
-// Uses the same styling as footerView so it visually replaces it.
+// footerToast renders a single-line toast notification styled like the footer
+// bar. isErr controls red vs green colouring. The line is padded to width so
+// it fills the full footer row without changing the overall layout height.
+func footerToast(msg string, isErr bool, width int) string {
+	footerBg := lipgloss.Color("235")
+	fg := lipgloss.Color("86") // green
+	icon := "✓"
+	if isErr {
+		fg = lipgloss.Color("196") // red
+		icon = "✗"
+	}
+	bg := lipgloss.NewStyle().Background(footerBg)
+	txt := lipgloss.NewStyle().Background(footerBg).Foreground(fg).Bold(true)
+	line := bg.Render("  ") + txt.Render(icon+" "+msg)
+	w := lipgloss.Width(line)
+	if w < width {
+		line += bg.Render(strings.Repeat(" ", width-w))
+	}
+	return line
+}
+
+// detailActionFooter renders the context-specific footer shown in detail views.
+// When there is an active toast (action message / error), it replaces the key
+// hints for the duration of the auto-dismiss timer — keeping the layout height
+// exactly constant.
 func detailActionFooter(m AppModel, width int) string {
+	// Toast / pending indicator — all shown in place of key hints.
+	// Priority: error > success > pending (working…)
+	if m.activeTab == TabIssues && m.issues.showDetail {
+		if m.issues.actionErr != nil {
+			return footerToast(m.issues.actionErr.Error(), true, width)
+		}
+		if m.issues.actionMsg != "" {
+			return footerToast(m.issues.actionMsg, false, width)
+		}
+		if m.issues.actionPending != "" {
+			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width)
+		}
+	}
+	if m.activeTab == TabPRs && m.prs.showDetail {
+		if m.prs.actionErr != nil {
+			return footerToast(m.prs.actionErr.Error(), true, width)
+		}
+		if m.prs.actionMsg != "" {
+			return footerToast(m.prs.actionMsg, false, width)
+		}
+		if m.prs.actionPending != "" {
+			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width)
+		}
+	}
+
 	footerBg := lipgloss.NewStyle().Background(lipgloss.Color("235"))
 	keyStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("208")).Bold(true)
 	descStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("244"))
@@ -346,7 +474,7 @@ func detailActionFooter(m AppModel, width int) string {
 		addHint("b", "back")
 	case m.activeTab == TabPRs && m.prs.showDetail:
 		closeLabel := "close"
-		if m.prs.detailPR.State == "closed" {
+		if strings.EqualFold(m.prs.detailPR.State, "closed") {
 			closeLabel = "reopen"
 		}
 		addHint("c", "checkout")
@@ -413,6 +541,24 @@ func (m AppModel) View() string {
 	innerW := m.width - 2
 	innerH := m.height - 2
 
+	// ── Filter loading / form overlay ─────────────────────────────────────────
+	// Show spinner while fetching filter data, then the embedded form.
+	// Both replace the normal body content — no terminal suspension.
+	if m.filterLoading || m.filterForm != nil {
+		var body string
+		if m.filterLoading {
+			body = "\n  " + m.spinner.View() + " Loading filter options…\n"
+		} else {
+			body = m.filterForm.View()
+		}
+
+		appBorder := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("208")).
+			Width(innerW)
+		return appBorder.Render(body)
+	}
+
 	inDetail := inDetailMode(m)
 	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail)
 
@@ -426,7 +572,6 @@ func (m AppModel) View() string {
 		body = m.dashboard.View()
 	}
 
-	// Build the footer: detail-specific actions when in a detail view, global nav otherwise.
 	var footer string
 	if inDetail {
 		footer = detailActionFooter(m, innerW)
@@ -434,13 +579,11 @@ func (m AppModel) View() string {
 		footer = footerView(m.activeTab, innerW)
 	}
 
-	// Count used lines: header + body + footer
 	headerLines := strings.Count(header, "\n")
 	bodyLines := strings.Count(body, "\n")
 	footerLines := strings.Count(footer, "\n") + 1
 	usedLines := headerLines + bodyLines + footerLines
 
-	// Fill remaining space so footer sticks to the bottom
 	remaining := innerH - usedLines
 	if remaining < 0 {
 		remaining = 0

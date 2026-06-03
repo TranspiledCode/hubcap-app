@@ -242,104 +242,167 @@ func (m DashboardModel) View() string {
 		return errorBox(fmt.Sprintf("Dashboard error: %v\n\nPress r to retry.", m.err))
 	}
 
+	width := m.width - 4
+	if width < 60 {
+		width = 60
+	}
+
 	var b strings.Builder
 
-	sectionIcons := [3]string{"⟳", "⎇", "◉"}
-	sectionHeaderStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("208"))
-	sectionCountStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("141"))
-	sectionDivStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("237"))
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("23")).
-		Foreground(lipgloss.Color("86"))
-	prBadgeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("141")).
-		Bold(true)
-	isBadgeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("83")).
-		Bold(true)
-	mutedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("244"))
+	// ── Styles ────────────────────────────────────────────────────────────────
+	selectedBg := lipgloss.Color("235")
 
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	countStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true)
+	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	// stateIcon returns the type icon colored by state.
+	// ⚑ = issue (flag), ⤴ = PR (upward arrow). Color = state.
+	issueIcon := func(state string) string {
+		color := lipgloss.Color("83") // green = open
+		if strings.EqualFold(state, "closed") {
+			color = lipgloss.Color("196") // red = closed
+		}
+		return lipgloss.NewStyle().Foreground(color).Bold(true).Render("⚑")
+	}
+	prIcon := func(state string, isDraft bool) string {
+		var color lipgloss.Color
+		switch {
+		case isDraft:
+			color = lipgloss.Color("214") // amber = draft
+		case strings.EqualFold(state, "merged"):
+			color = lipgloss.Color("141") // purple = merged
+		case strings.EqualFold(state, "closed"):
+			color = lipgloss.Color("196") // red = closed
+		default:
+			color = lipgloss.Color("83") // green = open
+		}
+		return lipgloss.NewStyle().Foreground(color).Bold(true).Render("⤴")
+	}
+
+	sectionIcons := [3]string{"⟳", "⎇", "●"}
 	sectionCounts := [3]int{
 		len(m.data.reviewRequests),
 		len(m.data.myPRs),
 		len(m.data.assignedIssues),
 	}
 
-	lastSectionID := -1
+	// ── renderSectionHeader ───────────────────────────────────────────────────
+	// Renders: "  icon  NAME  ─────────────────────────────────  N"
+	renderSectionHeader := func(sectionID int) string {
+		icon := sectionIcons[sectionID]
+		name := sectionNames[sectionID]
+		count := sectionCounts[sectionID]
 
+		left := "  " + icon + "  " + nameStyle.Render(name) + "  "
+		right := "  " + countStyle.Render(fmt.Sprintf("%d", count))
+		ruleW := width - lipgloss.Width(left) - lipgloss.Width(right)
+		if ruleW < 1 {
+			ruleW = 1
+		}
+		return left + ruleStyle.Render(strings.Repeat("─", ruleW)) + right
+	}
+
+	// ── renderRow ─────────────────────────────────────────────────────────────
+	// Renders a single item row. icon is the type+state symbol (pre-colored).
+	renderRow := func(selected bool, icon, title, rightStr string, number int) string {
+		var base lipgloss.Style
+		if selected {
+			base = lipgloss.NewStyle().Background(selectedBg)
+		} else {
+			base = lipgloss.NewStyle()
+		}
+
+		var accent string
+		if selected {
+			accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+				base.Render(" ")
+		} else {
+			accent = "  "
+		}
+
+		numStyle := base.Foreground(lipgloss.Color("69"))
+		if selected {
+			numStyle = numStyle.Bold(true)
+		}
+		numStr := numStyle.Render(fmt.Sprintf(" #%-4d", number))
+
+		rightW := lipgloss.Width(rightStr)
+		// fixed = accent(2) + icon(1) + "  "(2) + numStr + sp(1) + gap(2) + right + pad(1)
+		fixed := 2 + 1 + 2 + lipgloss.Width(numStr) + 1 + 2 + rightW + 1
+		titleW := width - fixed
+		if titleW < 10 {
+			titleW = 10
+		}
+
+		titleStyle := base.Foreground(lipgloss.Color("252"))
+		if selected {
+			titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+		}
+		titleStr := titleStyle.Render(truncate(cleanLine(title), titleW))
+		titleActualW := lipgloss.Width(titleStr)
+
+		fillW := width - 2 - 1 - 2 - lipgloss.Width(numStr) - 1 - titleActualW - 2 - rightW - 1
+		if fillW < 0 {
+			fillW = 0
+		}
+		fill := base.Render(strings.Repeat(" ", fillW))
+
+		return accent + icon + "  " + numStr + " " + titleStr + fill + "  " + rightStr + base.Render(" ")
+	}
+
+	// halfSpace is a blank line that blends with the body background, used as
+	// a spacing row between section headers and items.
+	halfSpace := strings.Repeat(" ", width)
+
+	// ── Render rows ───────────────────────────────────────────────────────────
+	firstSection := true
 	for i, row := range m.rows {
 		if row.isHeader {
-			// Section divider (not before the very first section)
-			if lastSectionID >= 0 {
-				b.WriteString(sectionDivStyle.Render(strings.Repeat("─", 60)) + "\n")
+			// Blank line + half-space before every section except the first.
+			if !firstSection {
+				b.WriteString("\n")
+				b.WriteString(halfSpace + "\n")
 			}
-			lastSectionID = row.sectionID
-			icon := sectionIcons[row.sectionID]
-			name := sectionNames[row.sectionID]
-			count := sectionCounts[row.sectionID]
-			b.WriteString(sectionHeaderStyle.Render(fmt.Sprintf("  %s %s ", icon, name)) +
-				sectionCountStyle.Render(fmt.Sprintf("(%d)", count)) + "\n")
+			firstSection = false
+			b.WriteString(renderSectionHeader(row.sectionID) + "\n")
+			// Half-space between header and first item.
+			b.WriteString(halfSpace + "\n")
 			continue
 		}
 
 		selected := i == m.cursor
-		prefix := "    "
-		if selected {
-			prefix = "  ▶ "
-		}
 
-		var line string
 		switch row.sectionID {
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
-			checksCol := summarizeChecks(p.StatusRollup)
-			authorCol := mutedStyle.Render("by " + truncate(p.Author.Login, 12))
-			line = fmt.Sprintf("%s%s %-6d %-50s  %s  %s",
-				prefix,
-				prBadgeStyle.Render("PR"),
-				p.Number,
-				truncate(cleanLine(p.Title), 50),
-				authorCol,
-				checksCol,
-			)
+			rightStr := mutedStyle.Render("by "+truncate(p.Author.Login, 14)) +
+				"  " + summarizeChecks(p.StatusRollup)
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, rightStr, p.Number) + "\n")
+
 		case secMyPRs:
 			p := m.data.myPRs[row.itemIdx]
-			checksCol := summarizeChecks(p.StatusRollup)
-			statusCol := func() string {
-				if p.IsDraft {
-					return mutedStyle.Render("draft")
-				}
-				return ""
-			}()
-			line = fmt.Sprintf("%s%s %-6d %-52s  %s  %s",
-				prefix,
-				prBadgeStyle.Render("PR"),
-				p.Number,
-				truncate(cleanLine(p.Title), 52),
-				statusCol,
-				checksCol,
-			)
+			var branchStr string
+			if p.HeadRefName != "" && p.BaseRefName != "" {
+				branchStr = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(truncate(p.HeadRefName, 18)) +
+					lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(" → ") +
+					lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(p.BaseRefName)
+			} else if p.IsDraft {
+				branchStr = mutedStyle.Render("draft")
+			}
+			checks := summarizeChecks(p.StatusRollup)
+			var rightStr string
+			if branchStr != "" {
+				rightStr = branchStr + "  " + checks
+			} else {
+				rightStr = checks
+			}
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, rightStr, p.Number) + "\n")
+
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			labelCol := coloredLabelsCompact(iss.Labels, 25)
-			line = fmt.Sprintf("%s%s %-6d %-52s  %s",
-				prefix,
-				isBadgeStyle.Render("IS"),
-				iss.Number,
-				truncate(cleanLine(iss.Title), 52),
-				labelCol,
-			)
-		}
-
-		if selected {
-			b.WriteString(selectedStyle.Render(line) + "\n")
-		} else {
-			b.WriteString(line + "\n")
+			rightStr := issueRowLabels(iss.Labels, "", 40)
+			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, rightStr, iss.Number) + "\n")
 		}
 	}
 

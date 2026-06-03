@@ -11,40 +11,39 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-func configurePRFilters(state *AppState) github.PRFilters {
-	filters := state.PRFilters
+// PRFilterVals holds the mutable values bound to the embedded PR filter form.
+// Must be heap-allocated (use &PRFilterVals{}) for stable huh Value() pointers.
+type PRFilterVals struct {
+	State          string
+	AssigneeChoice string
+	AssigneeCustom string
+	SelectedLabels []string
+	LabelInput     string
+	Draft          string
+	ReviewStatus   string
+	LimitInput     string
+	ActionChoice   string
+}
 
-	// Initialize with current values
-	stateChoice := filters.State
-
-	var availableAssignees []string
-	var availableLabels []string
-
-	// Fetch available options with spinners
-	withSpinner("Fetching assignees...", func() error {
-		var err error
-		availableAssignees, err = github.FetchAssignees()
-		return err
-	})
-
-	withSpinner("Fetching labels...", func() error {
-		var err error
-		availableLabels, err = github.FetchLabels()
-		return err
-	})
-
-	assigneeChoice := assigneeToChoice(filters.Assignee, availableAssignees)
-	assigneeCustom := ""
-	if assigneeChoice == "custom" {
-		assigneeCustom = filters.Assignee
+// InitPRFilterVals pre-populates vals from the current PR filter settings.
+func InitPRFilterVals(vals *PRFilterVals, filters github.PRFilters, assignees []string) {
+	vals.State = filters.State
+	vals.AssigneeChoice = assigneeToChoice(filters.Assignee, assignees)
+	vals.AssigneeCustom = ""
+	if vals.AssigneeChoice == "custom" {
+		vals.AssigneeCustom = filters.Assignee
 	}
-	labelInput := filters.Label
-	selectedLabels := splitCSV(filters.Label)
-	draftChoice := filters.Draft
-	reviewStatusInput := filters.ReviewStatus
-	limitInput := fmt.Sprintf("%d", filters.Limit)
-	actionChoice := "save"
+	vals.SelectedLabels = splitCSV(filters.Label)
+	vals.LabelInput = filters.Label
+	vals.Draft = filters.Draft
+	vals.ReviewStatus = filters.ReviewStatus
+	vals.LimitInput = fmt.Sprintf("%d", filters.Limit)
+	vals.ActionChoice = "save"
+}
 
+// BuildPRFilterForm constructs a *huh.Form bound to vals. Call form.Init()
+// to start it; route messages through form.Update(msg) inside your model.
+func BuildPRFilterForm(vals *PRFilterVals, assignees []string, labels []string) *huh.Form {
 	groupFields := []huh.Field{
 		huh.NewSelect[string]().
 			Title("State").
@@ -54,31 +53,31 @@ func configurePRFilters(state *AppState) github.PRFilters {
 				huh.NewOption("merged", "merged"),
 				huh.NewOption("all", "all"),
 			).
-			Value(&stateChoice),
+			Value(&vals.State),
 		huh.NewSelect[string]().
 			Title("Assignee").
-			Options(assigneeOptions(availableAssignees)...).
-			Value(&assigneeChoice),
+			Options(assigneeOptions(assignees)...).
+			Value(&vals.AssigneeChoice),
 		huh.NewInput().
 			Title("Custom assignee").
 			Placeholder("GitHub username").
-			Value(&assigneeCustom).
+			Value(&vals.AssigneeCustom).
 			DescriptionFunc(func() string {
-				if assigneeChoice == "custom" {
+				if vals.AssigneeChoice == "custom" {
 					return "Required when Custom is selected."
 				}
 				return ""
-			}, &assigneeChoice),
+			}, &vals.AssigneeChoice),
 	}
 
-	if len(availableLabels) > 0 {
-		labelOptions := make([]huh.Option[string], 0, len(availableLabels))
-		for _, name := range availableLabels {
+	if len(labels) > 0 {
+		labelOptions := make([]huh.Option[string], 0, len(labels))
+		for _, name := range labels {
 			labelOptions = append(labelOptions, huh.NewOption(name, name))
 		}
 		height := len(labelOptions)
 		if height > 8 {
-			height = 8 // Limit visible rows for long lists
+			height = 8
 		}
 		groupFields = append(groupFields,
 			huh.NewMultiSelect[string]().
@@ -86,14 +85,14 @@ func configurePRFilters(state *AppState) github.PRFilters {
 				Description("Space to toggle. Matches PRs with ALL selected labels.").
 				Options(labelOptions...).
 				Height(height).
-				Value(&selectedLabels),
+				Value(&vals.SelectedLabels),
 		)
 	} else {
 		groupFields = append(groupFields,
 			huh.NewInput().
 				Title("Label").
 				Placeholder("Label name (comma-separated) or blank for any").
-				Value(&labelInput),
+				Value(&vals.LabelInput),
 		)
 	}
 
@@ -105,55 +104,52 @@ func configurePRFilters(state *AppState) github.PRFilters {
 				huh.NewOption("draft only", "true"),
 				huh.NewOption("non-draft only", "false"),
 			).
-			Value(&draftChoice),
+			Value(&vals.Draft),
 		huh.NewInput().
 			Title("Review status").
 			Placeholder("approved, changes-requested, etc.").
-			Value(&reviewStatusInput),
+			Value(&vals.ReviewStatus),
 		huh.NewInput().
 			Title("Limit").
-			Placeholder(fmt.Sprintf("%d", filters.Limit)).
-			Value(&limitInput),
+			Placeholder("e.g. 50").
+			Value(&vals.LimitInput),
 		huh.NewSelect[string]().
 			Title("Action").
 			Options(
 				huh.NewOption("Save filters", "save"),
 				huh.NewOption("Reset to defaults", "reset"),
 			).
-			Value(&actionChoice),
+			Value(&vals.ActionChoice),
 	)
 
-	form := huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+}
 
-	if err := form.Run(); err != nil {
-		return filters // Return original on error/cancel
-	}
-
-	if actionChoice == "reset" {
+// ResolvePRFilters reads the completed vals and returns an updated PRFilters.
+func ResolvePRFilters(vals *PRFilterVals, current github.PRFilters, labels []string) github.PRFilters {
+	if vals.ActionChoice == "reset" {
 		return github.PRFilters{State: "open", Limit: 50}
 	}
-
-	if stateChoice != "" {
-		filters.State = stateChoice
+	filters := current
+	if vals.State != "" {
+		filters.State = vals.State
 	}
-	filters.Assignee = resolveAssignee(assigneeChoice, assigneeCustom)
-	if len(availableLabels) > 0 {
-		filters.Label = strings.Join(selectedLabels, ",")
-	} else if labelInput != "" {
-		filters.Label = strings.TrimSpace(labelInput)
+	filters.Assignee = resolveAssignee(vals.AssigneeChoice, vals.AssigneeCustom)
+	if len(labels) > 0 {
+		filters.Label = strings.Join(vals.SelectedLabels, ",")
+	} else if vals.LabelInput != "" {
+		filters.Label = strings.TrimSpace(vals.LabelInput)
+	} else {
+		filters.Label = ""
 	}
-	if draftChoice != "" {
-		filters.Draft = draftChoice
+	filters.Draft = vals.Draft
+	if vals.ReviewStatus != "" {
+		filters.ReviewStatus = strings.TrimSpace(vals.ReviewStatus)
 	}
-	if reviewStatusInput != "" {
-		filters.ReviewStatus = strings.TrimSpace(reviewStatusInput)
-	}
-	if limitInput != "" {
-		limit, err := strconv.Atoi(limitInput)
-		if err == nil && limit > 0 {
+	if vals.LimitInput != "" {
+		if limit, err := strconv.Atoi(vals.LimitInput); err == nil && limit > 0 {
 			filters.Limit = limit
 		}
 	}
-
 	return filters
 }

@@ -11,7 +11,7 @@ func FetchPRs(filters PRFilters) ([]PullRequest, error) {
 		"pr", "list",
 		"--state", filters.State,
 		"--limit", strconv.Itoa(filters.Limit),
-		"--json", "number,title,author,assignees,labels,state,isDraft,headRefName,statusCheckRollup,url",
+		"--json", "number,title,author,assignees,labels,state,isDraft,headRefName,baseRefName,statusCheckRollup,url",
 	}
 	if filters.Author != "" {
 		args = append(args, "--author", filters.Author)
@@ -57,7 +57,7 @@ func FetchReviewRequests(limit int) ([]PullRequest, error) {
 func FetchPR(number int) (PullRequest, error) {
 	output, err := RunCommand(
 		"gh", "pr", "view", strconv.Itoa(number),
-		"--json", "number,title,body,author,assignees,labels,state,isDraft,headRefName,reviewDecision,statusCheckRollup,url,createdAt",
+		"--json", "number,title,body,author,assignees,labels,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,url,createdAt",
 	)
 	if err != nil {
 		return PullRequest{}, err
@@ -70,11 +70,28 @@ func FetchPR(number int) (PullRequest, error) {
 }
 
 func ClosePR(number int) error {
-	return RunCommandPassthrough("gh", "pr", "close", strconv.Itoa(number))
+	_, err := RunCommand("gh", "pr", "close", strconv.Itoa(number))
+	return err
 }
 
 func ReopenPR(number int) error {
-	return RunCommandPassthrough("gh", "pr", "reopen", strconv.Itoa(number))
+	_, err := RunCommand("gh", "pr", "reopen", strconv.Itoa(number))
+	return err
+}
+
+func CheckoutPR(number int) error {
+	_, err := RunCommand("gh", "pr", "checkout", strconv.Itoa(number))
+	return err
+}
+
+func MergePR(number int, strategy string) error {
+	_, err := RunCommand("gh", "pr", "merge", strconv.Itoa(number), "--"+strategy)
+	return err
+}
+
+func CreatePRFill() error {
+	_, err := RunCommand("gh", "pr", "create", "--fill")
+	return err
 }
 
 func FilterNonDraftPRs(prs []PullRequest) []PullRequest {
