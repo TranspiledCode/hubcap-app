@@ -6,7 +6,6 @@ import (
 	"strconv"
 )
 
-
 func FetchIssues(filters Filters) ([]Issue, error) {
 	args := []string{
 		"issue", "list",
