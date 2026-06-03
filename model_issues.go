@@ -262,6 +262,11 @@ func newIssuesModel(filters github.Filters) IssuesModel {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	// Disable the list's built-in quit bindings (q and esc by default) so they
+	// don't call tea.Quit directly — we handle quit ourselves with a confirmation
+	// prompt. Esc in particular would otherwise bypass confirmingQuit entirely.
+	l.KeyMap.Quit.SetEnabled(false)
+	l.KeyMap.ForceQuit.SetEnabled(false)
 
 	return IssuesModel{
 		list:     l,

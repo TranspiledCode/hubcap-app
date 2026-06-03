@@ -272,6 +272,10 @@ func newPRsModel(filters github.PRFilters) PRsModel {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	// Disable the list's built-in quit bindings so they don't call tea.Quit
+	// directly and bypass our confirmation prompt.
+	l.KeyMap.Quit.SetEnabled(false)
+	l.KeyMap.ForceQuit.SetEnabled(false)
 
 	return PRsModel{
 		list:     l,
