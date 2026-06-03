@@ -111,6 +111,10 @@ type AppModel struct {
 	// BubbleTea model copies so huh's Value() pointers remain valid.
 	issueFilterVals *IssueFilterVals
 	prFilterVals    *PRFilterVals
+
+	// confirmingQuit is true while the "Quit Hubcap? [y] / any key to cancel"
+	// prompt is showing. Only y/Y proceeds to tea.Quit; anything else dismisses.
+	confirmingQuit bool
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters) AppModel {
@@ -175,6 +179,27 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Snapshot detail state before processing — used to detect header changes.
 	wasInDetail := inDetailMode(m)
+
+	// ── Quit confirmation takes highest priority ──────────────────────────────
+	// While the prompt is showing, only y/Y quits; anything else dismisses it.
+	// Non-key messages (resize, spinner ticks) still flow through normally.
+	if m.confirmingQuit {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "y", "Y":
+				return m, tea.Quit
+			default:
+				m.confirmingQuit = false
+			}
+			return m, nil
+		}
+		// Allow window resize through so the prompt stays correctly sized.
+		if wm, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wm.Width
+			m.height = wm.Height
+		}
+		return m, nil
+	}
 
 	// ── Filter form takes priority ────────────────────────────────────────────
 	// Route all messages to the active filter form exclusively.
@@ -334,7 +359,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
 		}
 		if m.issues.action == "quit" {
-			return m, tea.Quit
+			m.issues.action = ""
+			m.confirmingQuit = true
+			return m, nil
 		}
 
 	case TabPRs:
@@ -349,7 +376,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
 		}
 		if m.prs.action == "quit" {
-			return m, tea.Quit
+			m.prs.action = ""
+			m.confirmingQuit = true
+			return m, nil
 		}
 
 	case TabDashboard:
@@ -364,7 +393,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
 		}
 		if m.dashboard.action == "quit" {
-			return m, tea.Quit
+			m.dashboard.action = ""
+			m.confirmingQuit = true
+			return m, nil
 		}
 	}
 
@@ -375,6 +406,27 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// quitConfirmFooter renders the quit confirmation prompt in place of the
+// normal footer. y/Y confirms, any other key cancels.
+func quitConfirmFooter(width int) string {
+	footerBg := lipgloss.NewStyle().Background(lipgloss.Color("235"))
+	promptSt := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("252"))
+	keySt := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("208")).Bold(true)
+	yesSt := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("196")).Bold(true)
+	cancelSt := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("244"))
+
+	line := footerBg.Render("  ") +
+		promptSt.Render("Quit Hubcap?  ") +
+		yesSt.Render("[y]") + promptSt.Render(" quit  ") +
+		keySt.Render("[any key]") + cancelSt.Render(" cancel")
+
+	lineW := lipgloss.Width(line)
+	if lineW < width {
+		line += footerBg.Render(strings.Repeat(" ", width-lineW))
+	}
+	return line
 }
 
 // footerPendingToast renders a single-line "in progress" indicator in the
@@ -573,9 +625,12 @@ func (m AppModel) View() string {
 	}
 
 	var footer string
-	if inDetail {
+	switch {
+	case m.confirmingQuit:
+		footer = quitConfirmFooter(innerW)
+	case inDetail:
 		footer = detailActionFooter(m, innerW)
-	} else {
+	default:
 		footer = footerView(m.activeTab, innerW)
 	}
 
