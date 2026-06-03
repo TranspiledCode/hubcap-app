@@ -100,8 +100,8 @@ func (i issueListItem) FilterValue() string {
 
 type issueDelegate struct{}
 
-func (d issueDelegate) Height() int                              { return 1 }
-func (d issueDelegate) Spacing() int                             { return 0 }
+func (d issueDelegate) Height() int                             { return 1 }
+func (d issueDelegate) Spacing() int                            { return 0 }
 func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {

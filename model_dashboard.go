@@ -40,15 +40,15 @@ var sectionNames = [3]string{
 type DashboardModel struct {
 	spinner spinner.Model
 	loading bool
-	loaded   bool
-	err      error
-	data     dashboardData
-	cfg      Config
-	cursor   int
-	rows     []dashRow
-	width    int
-	height   int
-	action   string
+	loaded  bool
+	err     error
+	data    dashboardData
+	cfg     Config
+	cursor  int
+	rows    []dashRow
+	width   int
+	height  int
+	action  string
 }
 
 func newDashboardModel(cfg Config) DashboardModel {

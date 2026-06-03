@@ -4,6 +4,7 @@ package main
 import (
 	"hubcap/internal/github"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,6 +61,12 @@ type filterDataFetchedMsg struct {
 	labels    []string
 }
 
+// autoRefreshTickMsg is sent periodically to trigger auto-refresh of data
+type autoRefreshTickMsg struct{}
+
+// timerTickMsg is sent every second to update the timer display
+type timerTickMsg struct{}
+
 // dashboardData holds the three personal sections of the My Work dashboard.
 type dashboardData struct {
 	reviewRequests []github.PullRequest
@@ -80,10 +87,10 @@ const (
 // AppModel is the root bubbletea model
 type AppModel struct {
 	// Core state
-	activeTab  TabID
-	screen     Screen
-	width      int
-	height     int
+	activeTab TabID
+	screen    Screen
+	width     int
+	height    int
 
 	// Config & repo
 	repo string
@@ -111,10 +118,18 @@ type AppModel struct {
 	// BubbleTea model copies so huh's Value() pointers remain valid.
 	issueFilterVals *IssueFilterVals
 	prFilterVals    *PRFilterVals
+	configVals      *ConfigVals
+
+	// Configuration form state
+	configForm *huh.Form // non-nil while config form is showing
 
 	// confirmingQuit is true while the "Quit Hubcap? [y] / any key to cancel"
 	// prompt is showing. Only y/Y proceeds to tea.Quit; anything else dismisses.
 	confirmingQuit bool
+
+	// Auto-refresh state (global across all tabs)
+	lastRefreshTime int64 // Unix timestamp of last refresh
+	timerTick       int   // Counter to force view updates every second
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters) AppModel {
@@ -133,15 +148,23 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 		dashboard:       newDashboardModel(cfg),
 		issueFilterVals: &IssueFilterVals{},
 		prFilterVals:    &PRFilterVals{},
+		configVals:      &ConfigVals{},
 	}
 }
 
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.spinner.Tick,
 		m.dashboard.spinner.Tick,
 		m.dashboard.fetchCmd(),
-	)
+	}
+	// Start auto-refresh ticker if enabled
+	if m.cfg.AutoRefreshEnabled {
+		m.lastRefreshTime = time.Now().Unix()
+		cmds = append(cmds, autoRefreshCmd(m.cfg.AutoRefreshInterval))
+		cmds = append(cmds, timerCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 func inDetailMode(m AppModel) bool {
@@ -155,6 +178,7 @@ func inDetailMode(m AppModel) bool {
 func (m AppModel) hasActiveForm() bool {
 	return m.filterForm != nil ||
 		m.filterLoading ||
+		m.configForm != nil ||
 		m.issues.activeForm != nil ||
 		m.prs.activeForm != nil
 }
@@ -172,6 +196,23 @@ func fetchFilterDataCmd(forPRs bool) tea.Cmd {
 			labels:    labels,
 		}
 	}
+}
+
+// autoRefreshCmd returns a command that sends autoRefreshTickMsg at the configured interval
+func autoRefreshCmd(interval int) tea.Cmd {
+	if interval <= 0 {
+		return nil
+	}
+	return tea.Tick(time.Duration(interval)*time.Second, func(t time.Time) tea.Msg {
+		return autoRefreshTickMsg{}
+	})
+}
+
+// timerCmd returns a command that sends timerTickMsg every second to update the display
+func timerCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return timerTickMsg{}
+	})
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -199,6 +240,39 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.height = wm.Height
 		}
 		return m, nil
+	}
+
+	// ── Config form takes priority ────────────────────────────────────────────
+	// Route all messages to the active config form exclusively.
+	if m.configForm != nil {
+		form, cmd := m.configForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.configForm = f
+		}
+		switch m.configForm.State {
+		case huh.StateCompleted:
+			m.configForm = nil
+			newCfg := ResolveConfig(m.configVals, m.cfg)
+			m.cfg = newCfg
+			// Save the config
+			if err := saveConfig(newCfg); err != nil {
+				// Handle error - for now just continue
+			}
+			// Update dashboard model with new config
+			m.dashboard.cfg = newCfg
+			// Start or restart auto-refresh ticker based on new config
+			if newCfg.AutoRefreshEnabled {
+				m.lastRefreshTime = time.Now().Unix()
+				return m, tea.Batch(autoRefreshCmd(newCfg.AutoRefreshInterval), timerCmd())
+			}
+			// If disabled, reset the refresh time
+			m.lastRefreshTime = 0
+			return m, nil
+		case huh.StateAborted:
+			m.configForm = nil
+			return m, nil
+		}
+		return m, cmd
 	}
 
 	// ── Filter form takes priority ────────────────────────────────────────────
@@ -264,6 +338,45 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prs.loaded = false
 		return m, tea.Batch(m.prs.fetchCmd(), m.prs.spinner.Tick)
 
+	case autoRefreshTickMsg:
+		// Update global refresh time
+		m.lastRefreshTime = time.Now().Unix()
+		// Auto-refresh the current tab's data
+		switch m.activeTab {
+		case TabIssues:
+			if !m.issues.loading && !m.issues.showDetail {
+				m.issues.loading = true
+				m.issues.loaded = false
+				cmds = append(cmds, m.issues.fetchCmd(), m.issues.spinner.Tick)
+			}
+		case TabPRs:
+			if !m.prs.loading && !m.prs.showDetail {
+				m.prs.loading = true
+				m.prs.loaded = false
+				cmds = append(cmds, m.prs.fetchCmd(), m.prs.spinner.Tick)
+			}
+		case TabDashboard:
+			if !m.dashboard.loading {
+				m.dashboard.loading = true
+				m.dashboard.loaded = false
+				cmds = append(cmds, m.dashboard.fetchCmd(), m.dashboard.spinner.Tick)
+			}
+		}
+		// Schedule the next tick
+		if m.cfg.AutoRefreshEnabled {
+			cmds = append(cmds, autoRefreshCmd(m.cfg.AutoRefreshInterval))
+		}
+		return m, tea.Batch(cmds...)
+
+	case timerTickMsg:
+		// Increment counter to force view update
+		m.timerTick++
+		// Only continue timer if auto-refresh is enabled
+		if m.cfg.AutoRefreshEnabled {
+			cmds = append(cmds, timerCmd())
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -280,6 +393,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prev := (m.activeTab + 2) % 3
 				return m, func() tea.Msg { return switchTabMsg{tab: prev} }
 			}
+		case ",":
+			if m.hasActiveForm() {
+				break
+			}
+			// Open configuration form
+			InitConfigVals(m.configVals, m.cfg)
+			m.configForm = BuildConfigForm(m.configVals).WithWidth(m.width - 8)
+			return m, m.configForm.Init()
 		case "f":
 			if m.hasActiveForm() {
 				break
@@ -571,6 +692,7 @@ func footerView(activeTab TabID, width int) string {
 		addHint("n", "new PR")
 		addHint("f", "filters")
 	}
+	addHint(",", "config")
 	addHint("r", "refresh")
 	addHint("q", "quit")
 
@@ -593,6 +715,18 @@ func (m AppModel) View() string {
 	innerW := m.width - 2
 	innerH := m.height - 2
 
+	// ── Config form overlay ───────────────────────────────────────────────────
+	// Show the configuration form when active.
+	if m.configForm != nil {
+		body := m.configForm.View()
+
+		appBorder := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("208")).
+			Width(innerW)
+		return appBorder.Render(body)
+	}
+
 	// ── Filter loading / form overlay ─────────────────────────────────────────
 	// Show spinner while fetching filter data, then the embedded form.
 	// Both replace the normal body content — no terminal suspension.
@@ -612,7 +746,7 @@ func (m AppModel) View() string {
 	}
 
 	inDetail := inDetailMode(m)
-	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail)
+	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix())
 
 	var body string
 	switch m.activeTab {

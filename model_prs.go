@@ -102,8 +102,8 @@ func (p prListItem) FilterValue() string {
 
 type prDelegate struct{}
 
-func (d prDelegate) Height() int                              { return 1 }
-func (d prDelegate) Spacing() int                             { return 0 }
+func (d prDelegate) Height() int                             { return 1 }
+func (d prDelegate) Spacing() int                            { return 0 }
 func (d prDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {

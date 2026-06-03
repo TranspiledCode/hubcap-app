@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"hubcap/internal/github"
 
@@ -15,15 +16,15 @@ import (
 // Lipgloss styles
 var (
 	// Base colors
-	styleReset   = lipgloss.NewStyle()
-	styleGreen   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	styleYellow  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleRed     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	stylePurple  = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	styleGray    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleCyan    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	styleOrange  = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
-	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	styleReset  = lipgloss.NewStyle()
+	styleGreen  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	styleYellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	styleRed    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	stylePurple = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	styleGray   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleCyan   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styleOrange = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+	styleTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
 	// Box styles for messages
 	errorBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -168,7 +169,7 @@ const (
 )
 
 // headerView returns the header as a string for use in bubbletea View() functions.
-func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool) string {
+func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64) string {
 	if width == 0 {
 		width = 80
 	}
@@ -181,6 +182,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	versionStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208"))
 	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208")).Bold(true)
 	helpStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("244"))
+	refreshStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("86")).Bold(true)
 
 	tabActiveStyle := lipgloss.NewStyle().
 		Background(tabBg).
@@ -200,7 +202,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	filterSepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	filterHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
-	// ── Line 1: version · centered title · [?] help ───────────────────────
+	// ── Line 1: version · centered title · auto-refresh · [?] help ─────────
 	verText := "v" + version
 	helpText := "[?] help"
 	title := "Hubcap — " + repo
@@ -208,11 +210,29 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	verLen := lipgloss.Width(verText)
 	helpLen := lipgloss.Width(helpText)
 
+	// Build auto-refresh indicator
+	var refreshText string
+	var refreshLen int
+	if autoRefreshEnabled && lastRefresh > 0 {
+		iconText := "↻" // anticlockwise gapped circle arrow
+		elapsed := currentTime - lastRefresh
+		remaining := int64(autoRefreshInterval) - elapsed
+		if remaining < 0 {
+			remaining = 0
+		}
+		iconText += " " + formatDurationShort(time.Duration(remaining)*time.Second)
+		// Make the icon much larger with extra padding
+		refreshText = refreshStyle.Render("   " + iconText + "   ")
+		refreshLen = lipgloss.Width(refreshText)
+	} else {
+		refreshLen = 0
+	}
+
 	leftPad := (width/2 - titleLen/2) - verLen - 1
 	if leftPad < 1 {
 		leftPad = 1
 	}
-	rightPad := width - verLen - 1 - leftPad - titleLen - 1 - helpLen - 1
+	rightPad := width - verLen - 1 - leftPad - titleLen - 1 - refreshLen - helpLen - 1
 	if rightPad < 1 {
 		rightPad = 1
 	}
@@ -221,6 +241,8 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		topBarStyle.Render(strings.Repeat(" ", leftPad)) +
 		titleStyle.Render(title) +
 		topBarStyle.Render(strings.Repeat(" ", rightPad)) +
+		refreshText +
+		topBarStyle.Render(" ") +
 		helpStyle.Render(helpText+" ")
 	// pad to full width
 	line1Width := lipgloss.Width(line1)
@@ -407,6 +429,7 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 //	Line 3 — half-line gap (▁ thin rule)
 //	Line 4 — ⎇ branch · author (left)  ···  review · checks · pills (right)
 //	Line 5 — separator
+//
 // prStatusPill renders a review or CI status as a colored background chip,
 // matching the visual style of labelPill.
 func prStatusPill(stripBg lipgloss.Color, bg lipgloss.Color, fg lipgloss.Color, text string) string {
@@ -544,6 +567,17 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 		Render(strings.Repeat("─", width))
 
 	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + sepLine + "\n"
+}
+
+// formatDurationShort formats a time.Duration in a very compact way for the header
+func formatDurationShort(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	return fmt.Sprintf("%dh", int(d.Hours()))
 }
 
 func printIssueDetail(issue github.Issue, maxBodyRows, termCols int) {
