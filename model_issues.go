@@ -93,14 +93,15 @@ func (i issueListItem) FilterValue() string {
 }
 
 // ── issueDelegate ─────────────────────────────────────────────────────────────
-// Compact single-line delegate: Height=1, Spacing=0.
+// Two-line delegate: Height=2, Spacing=0.
 // Layout per row:
 //
-//	[accent] ● #N   Title…(fill)…  label1 · label2
+//	Line 1: [accent] ● #N   Title…(fill)
+//	Line 2:         Assignee  Labels…
 
 type issueDelegate struct{}
 
-func (d issueDelegate) Height() int                             { return 1 }
+func (d issueDelegate) Height() int                             { return 2 }
 func (d issueDelegate) Spacing() int                            { return 0 }
 func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
@@ -145,34 +146,42 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	numStr := numStyle.Render(fmt.Sprintf(" #%-4d", issue.Number))
 
-	// Labels for the right column (max 44 chars, colored text + · separator).
-	var bgKey string
-	if selected {
-		bgKey = "235"
-	}
-	labelStr := issueRowLabels(issue.Labels, bgKey, 44)
-	labelW := lipgloss.Width(labelStr)
-
-	// Calculate how much space the title can occupy.
-	// fixed = accent(2) + dot(1) + numStr(6) + space(1) + gap-before-labels(2) + rightPad(1)
-	fixed := 2 + 1 + lipgloss.Width(numStr) + 1 + 2 + 1
-	totalMid := width - fixed - labelW
-	if totalMid < 10 {
-		totalMid = 10
-	}
-
+	// Title with proper space
 	titleStyle := base.Foreground(lipgloss.Color("252"))
 	if selected {
 		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
 	}
-	titleStr := titleStyle.Render(truncate(issue.Title, totalMid))
-	titleActualW := lipgloss.Width(titleStr)
+	// Calculate title width: total - accent(2) - dot(1) - numStr(6) - space(1) - rightPad(1)
+	titleMaxW := width - 2 - 1 - lipgloss.Width(numStr) - 1 - 1
+	if titleMaxW < 20 {
+		titleMaxW = 20
+	}
+	titleStr := titleStyle.Render(truncate(issue.Title, titleMaxW))
 
-	// Fill gap between title and the label column.
-	fill := base.Render(strings.Repeat(" ", totalMid-titleActualW))
+	// Line 1: accent + dot + number + title
+	line1 := accent + dot + numStr + " " + titleStr + base.Render(" ")
+	fmt.Fprint(w, line1)
 
-	line := accent + dot + numStr + " " + titleStr + fill + "  " + labelStr + base.Render(" ")
-	fmt.Fprint(w, line)
+	// Line 2: assignee + labels
+	// Assignee
+	assigneeStyle := base.Foreground(lipgloss.Color("244"))
+	var assigneeStr string
+	if len(issue.Assignees) > 0 {
+		assigneeStr = assigneeStyle.Render("@" + joinUsers(issue.Assignees))
+	} else {
+		assigneeStr = assigneeStyle.Render("—")
+	}
+
+	// Labels
+	var bgKey string
+	if selected {
+		bgKey = "235"
+	}
+	labelStr := issueRowLabels(issue.Labels, bgKey, width-lipgloss.Width(assigneeStr)-4)
+
+	// Line 2: indent + assignee + gap + labels
+	line2 := base.Render("  ") + assigneeStr + base.Render("  ") + labelStr + base.Render(" ")
+	fmt.Fprint(w, line2)
 }
 
 // issueRowLabels renders a short colored label string for a list row.
