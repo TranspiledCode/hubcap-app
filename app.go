@@ -647,19 +647,15 @@ func detailActionFooter(m AppModel, width int) string {
 			closeLabel = "reopen"
 		}
 		assignLabel := "assign"
-		if len(m.issues.detailIssue.Assignees) > 0 {
+		if isMeAssigned(m.issues.detailIssue.Assignees, m.currentUser) {
 			assignLabel = "unassign"
 		}
 		btns = []KeyButton{
-			kb(keys.IssueDevelop, "develop", ColorAction),
-			kb(keys.IssuePR, "PR", ColorAction),
+			kb(keys.Back, "back", ColorMeta),
 			kb(keys.IssueClose, closeLabel, ColorDanger),
 			kb(keys.IssueAssign, assignLabel, ColorAction),
-			kb(keys.IssueLabel, "label", ColorAction),
-			kb(keys.Browser, "browser", ColorAction),
-			kb(keys.CopyURL, "copy URL", ColorAction),
-			kb(keys.Refresh, "refresh", ColorAction),
-			kb(keys.Back, "back", ColorMeta),
+			kb(keys.IssueDevelop, "develop", ColorAction),
+			kb(keys.Browser, "browser", ColorMeta),
 		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
 		closeLabel := "close"
@@ -667,13 +663,11 @@ func detailActionFooter(m AppModel, width int) string {
 			closeLabel = "reopen"
 		}
 		btns = []KeyButton{
+			kb(keys.Back, "back", ColorMeta),
+			kb(keys.PRClose, closeLabel, ColorDanger),
 			kb(keys.PRCheckout, "checkout", ColorAction),
 			kb(keys.PRMerge, "merge", ColorAction),
-			kb(keys.PRClose, closeLabel, ColorDanger),
-			kb(keys.Browser, "browser", ColorAction),
-			kb(keys.CopyURL, "copy URL", ColorAction),
-			kb(keys.Refresh, "refresh", ColorAction),
-			kb(keys.Back, "back", ColorMeta),
+			kb(keys.Browser, "browser", ColorMeta),
 		}
 	}
 
