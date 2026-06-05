@@ -112,7 +112,7 @@ func (b KeyButton) Render(theme UITheme) string {
 	case ThemeDefault:
 		bracketSt := lipgloss.NewStyle().Foreground(b.Color).Background(bg)
 		return bracketSt.Render("[") +
-			keySt.Render(" "+b.Key+" ") +
+			keySt.Render(b.Key) +
 			bracketSt.Render("]") +
 			descSt.Render("  "+b.Desc)
 
