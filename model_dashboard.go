@@ -386,7 +386,7 @@ func (m DashboardModel) View() string {
 			if p.HeadRefName != "" && p.BaseRefName != "" {
 				branchStr = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(truncate(p.HeadRefName, 18)) +
 					lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(" → ") +
-					lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(p.BaseRefName)
+					lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(truncate(p.BaseRefName, 12))
 			} else if p.IsDraft {
 				branchStr = mutedStyle.Render("draft")
 			}
@@ -401,7 +401,11 @@ func (m DashboardModel) View() string {
 
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			rightStr := issueRowLabels(iss.Labels, "", 40)
+			labelMax := width * 30 / 100
+			if labelMax < 15 {
+				labelMax = 15
+			}
+			rightStr := issueRowLabels(iss.Labels, "", labelMax)
 			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, rightStr, iss.Number) + "\n")
 		}
 	}

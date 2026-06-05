@@ -160,28 +160,42 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 
 	// Line 1: accent + dot + number + title
 	line1 := accent + dot + numStr + " " + titleStr + base.Render(" ")
-	fmt.Fprint(w, line1)
 
-	// Line 2: assignee + labels
-	// Assignee
-	assigneeStyle := base.Foreground(lipgloss.Color("244"))
-	var assigneeStr string
-	if len(issue.Assignees) > 0 {
-		assigneeStr = assigneeStyle.Render("@" + joinUsers(issue.Assignees))
-	} else {
-		assigneeStr = assigneeStyle.Render("—")
+	// Line 2: indented to align with the title start on line 1.
+	// prefix = accent(2) + dot(1) + numStr + space(1)
+	lineIndent := 2 + 1 + lipgloss.Width(numStr) + 1
+	// contentW = available chars after indent and trailing pad
+	contentW := width - lineIndent - 1
+	if contentW < 20 {
+		contentW = 20
 	}
+	// separator between assignee and labels (matches issueRowLabels internal sep style)
+	const sepW = 5 // "  ·  "
+	assigneeMax := (contentW - sepW) * 30 / 100
+	if assigneeMax < 8 {
+		assigneeMax = 8
+	}
+	labelMax := contentW - assigneeMax - sepW
 
-	// Labels
+	assigneeStyle := base.Foreground(lipgloss.Color("244"))
+	var assigneeText string
+	if len(issue.Assignees) > 0 {
+		assigneeText = "@" + joinUsers(issue.Assignees)
+	} else {
+		assigneeText = "unassigned"
+	}
+	assigneeStr := assigneeStyle.Render(truncate(assigneeText, assigneeMax))
+
 	var bgKey string
 	if selected {
 		bgKey = "235"
 	}
-	labelStr := issueRowLabels(issue.Labels, bgKey, width-lipgloss.Width(assigneeStr)-4)
+	labelStr := issueRowLabels(issue.Labels, bgKey, labelMax)
 
-	// Line 2: indent + assignee + gap + labels
-	line2 := base.Render("  ") + assigneeStr + base.Render("  ") + labelStr + base.Render(" ")
-	fmt.Fprint(w, line2)
+	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	indent := base.Render(strings.Repeat(" ", lineIndent))
+	line2 := indent + assigneeStr + dimSep + labelStr + base.Render(" ")
+	fmt.Fprintf(w, "%s\n%s", line1, line2)
 }
 
 // issueRowLabels renders a short colored label string for a list row.
