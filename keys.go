@@ -55,7 +55,7 @@ var keys = keyMap{
 	Help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 
 	// ── List navigation ───────────────────────────────────────────────────
-	Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/↓", "up")),
 	Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 	Top:     key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
 	Bottom:  key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
