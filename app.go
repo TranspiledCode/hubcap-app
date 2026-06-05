@@ -515,121 +515,36 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// ── Footer button helpers ─────────────────────────────────────────────────────
-//
-// Every footer variant produces a 3-row block (matching the height of a
-// bordered button) so the layout never shifts when switching between hint,
-// toast, and confirmation modes.
-//
-// Color palette:
-//   green  (83)  — primary action keys
-//   amber (208)  — structural / meta keys  (tab, ?, ,)
-//   red   (196)  — destructive keys (quit, close)
-
-const btnBg = lipgloss.Color("235")
-
-// keyBtn renders key text inside a rounded lipgloss border.
-// The result is always 3 terminal rows: top border, content row, bottom border.
-func keyBtn(text string, fg lipgloss.Color) string {
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(fg).
-		BorderBackground(btnBg).
-		Foreground(fg).
-		Background(btnBg).
-		Padding(0, 1).
-		Bold(true).
-		Render(text)
-}
-
-// keyHint pairs a 3-row button with a description label, centering the label
-// on the middle row via JoinHorizontal.
-func keyHint(keyText, desc string, fg lipgloss.Color) string {
-	btn := keyBtn(keyText, fg)
-	lbl := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("244")).
-		Background(btnBg).
-		Render(" " + desc)
-	return lipgloss.JoinHorizontal(lipgloss.Center, btn, lbl)
-}
-
-// buildButtonFooter joins hint strings horizontally with equal gaps, pads every
-// line of the result to width, and returns a 3-row footer string.
-func buildButtonFooter(hints []string, width int) string {
-	bgSt := lipgloss.NewStyle().Background(btnBg)
-	edge := bgSt.Render("  ")
-	gap := bgSt.Render("   ")
-
-	parts := make([]string, 0, len(hints)*2+2)
-	parts = append(parts, edge)
-	for i, h := range hints {
-		if i > 0 {
-			parts = append(parts, gap)
-		}
-		parts = append(parts, h)
-	}
-	parts = append(parts, edge)
-
-	joined := lipgloss.JoinHorizontal(lipgloss.Center, parts...)
-
-	// Pad every line to the full footer width.
-	lines := strings.Split(joined, "\n")
-	for i, l := range lines {
-		w := lipgloss.Width(l)
-		if w < width {
-			lines[i] = l + bgSt.Render(strings.Repeat(" ", width-w))
-		} else if w > width {
-			lines[i] = lipgloss.NewStyle().MaxWidth(width).Render(l)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// centerInFooter wraps a single-line string in a 3-row block so toasts and
-// confirmations occupy the same height as the button footer.
-func centerInFooter(content string, width int) string {
-	bgSt := lipgloss.NewStyle().Background(btnBg)
-	blank := bgSt.Width(width).Render("")
-	w := lipgloss.Width(content)
-	if w < width {
-		content += bgSt.Render(strings.Repeat(" ", width-w))
-	} else if w > width {
-		content = lipgloss.NewStyle().MaxWidth(width).Render(content)
-	}
-	return blank + "\n" + content + "\n" + blank
-}
-
 // quitConfirmFooter renders the quit confirmation prompt.
 // y/Y confirms; any other key cancels.
 func quitConfirmFooter(width int) string {
-	hints := []string{
-		keyHint("y", "confirm quit", lipgloss.Color("196")),
-		keyHint("any key", "cancel", lipgloss.Color("208")),
-	}
-	return buildButtonFooter(hints, width)
+	return RenderFooterBar(width,
+		NewKeyButton("y", "confirm quit", ColorDanger),
+		NewKeyButton("any key", "cancel", ColorMeta),
+	)
 }
 
 // footerPendingToast renders a 3-row "working…" indicator with a spinner.
 func footerPendingToast(spinnerView string, msg string, width int) string {
-	bgSt := lipgloss.NewStyle().Background(btnBg)
-	spinSt := lipgloss.NewStyle().Background(btnBg).Foreground(lipgloss.Color("83"))
-	txtSt := lipgloss.NewStyle().Background(btnBg).Foreground(lipgloss.Color("244"))
-	line := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
-	return centerInFooter(line, width)
+	bgSt   := lipgloss.NewStyle().Background(footerBg)
+	spinSt := lipgloss.NewStyle().Background(footerBg).Foreground(ColorAction)
+	txtSt  := lipgloss.NewStyle().Background(footerBg).Foreground(lipgloss.Color("244"))
+	line   := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
+	return CenterInFooterBar(line, width)
 }
 
 // footerToast renders a 3-row success / error toast notification.
 func footerToast(msg string, isErr bool, width int) string {
-	fg := lipgloss.Color("83") // green
+	fg   := ColorAction // green
 	icon := "✓"
 	if isErr {
-		fg = lipgloss.Color("196") // red
+		fg   = ColorDanger // red
 		icon = "✗"
 	}
-	bgSt := lipgloss.NewStyle().Background(btnBg)
-	txtSt := lipgloss.NewStyle().Background(btnBg).Foreground(fg).Bold(true)
-	line := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
-	return centerInFooter(line, width)
+	bgSt  := lipgloss.NewStyle().Background(footerBg)
+	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(fg).Bold(true)
+	line  := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
+	return CenterInFooterBar(line, width)
 }
 
 // detailActionFooter renders the context-specific footer shown in detail views.
@@ -637,7 +552,7 @@ func footerToast(msg string, isErr bool, width int) string {
 // hints for the duration of the auto-dismiss timer — keeping the layout height
 // exactly constant.
 func detailActionFooter(m AppModel, width int) string {
-	// Toast / pending indicator — all shown in place of key hints.
+	// Toast / pending indicator — shown in place of key hints.
 	// Priority: error > success > pending (working…)
 	if m.activeTab == TabIssues && m.issues.showDetail {
 		if m.issues.actionErr != nil {
@@ -662,15 +577,11 @@ func detailActionFooter(m AppModel, width int) string {
 		}
 	}
 
-	green := lipgloss.Color("83")
-	amber := lipgloss.Color("208")
-	red := lipgloss.Color("196")
-
-	var hints []string
-	add := func(b key.Binding, desc string, fg lipgloss.Color) {
-		hints = append(hints, keyHint(b.Help().Key, desc, fg))
+	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
+		return NewKeyButton(b.Help().Key, desc, c)
 	}
 
+	var btns []KeyButton
 	switch {
 	case m.activeTab == TabIssues && m.issues.showDetail:
 		closeLabel := "close"
@@ -681,59 +592,62 @@ func detailActionFooter(m AppModel, width int) string {
 		if len(m.issues.detailIssue.Assignees) > 0 {
 			assignLabel = "unassign"
 		}
-		add(keys.IssueDevelop, "develop", green)
-		add(keys.IssuePR, "PR", green)
-		add(keys.IssueClose, closeLabel, red)
-		add(keys.IssueAssign, assignLabel, green)
-		add(keys.IssueLabel, "label", green)
-		add(keys.Browser, "browser", green)
-		add(keys.CopyURL, "copy URL", green)
-		add(keys.Refresh, "refresh", green)
-		add(keys.Back, "back", amber)
+		btns = []KeyButton{
+			kb(keys.IssueDevelop, "develop", ColorAction),
+			kb(keys.IssuePR, "PR", ColorAction),
+			kb(keys.IssueClose, closeLabel, ColorDanger),
+			kb(keys.IssueAssign, assignLabel, ColorAction),
+			kb(keys.IssueLabel, "label", ColorAction),
+			kb(keys.Browser, "browser", ColorAction),
+			kb(keys.CopyURL, "copy URL", ColorAction),
+			kb(keys.Refresh, "refresh", ColorAction),
+			kb(keys.Back, "back", ColorMeta),
+		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
 		closeLabel := "close"
 		if strings.EqualFold(m.prs.detailPR.State, "closed") {
 			closeLabel = "reopen"
 		}
-		add(keys.PRCheckout, "checkout", green)
-		add(keys.PRMerge, "merge", green)
-		add(keys.PRClose, closeLabel, red)
-		add(keys.Browser, "browser", green)
-		add(keys.CopyURL, "copy URL", green)
-		add(keys.Refresh, "refresh", green)
-		add(keys.Back, "back", amber)
+		btns = []KeyButton{
+			kb(keys.PRCheckout, "checkout", ColorAction),
+			kb(keys.PRMerge, "merge", ColorAction),
+			kb(keys.PRClose, closeLabel, ColorDanger),
+			kb(keys.Browser, "browser", ColorAction),
+			kb(keys.CopyURL, "copy URL", ColorAction),
+			kb(keys.Refresh, "refresh", ColorAction),
+			kb(keys.Back, "back", ColorMeta),
+		}
 	}
 
-	return buildButtonFooter(hints, width)
+	return RenderFooterBar(width, btns...)
 }
 
 func footerView(activeTab TabID, width int) string {
-	green := lipgloss.Color("83")
-	amber := lipgloss.Color("208")
-	red := lipgloss.Color("196")
-
-	add := func(hints *[]string, b key.Binding, desc string, fg lipgloss.Color) {
-		*hints = append(*hints, keyHint(b.Help().Key, desc, fg))
+	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
+		return NewKeyButton(b.Help().Key, desc, c)
 	}
 
-	var hints []string
-	add(&hints, keys.Up, "navigate", green)
-	add(&hints, keys.Open, "open", green)
-	add(&hints, keys.Tab, "switch view", amber)
+	btns := []KeyButton{
+		kb(keys.Up, "navigate", ColorAction),
+		kb(keys.Open, "open", ColorAction),
+		kb(keys.Tab, "switch view", ColorMeta),
+	}
 	switch activeTab {
 	case TabIssues:
-		add(&hints, keys.New, "new issue", green)
-		add(&hints, keys.Filters, "filters", amber)
+		btns = append(btns, kb(keys.New, "new issue", ColorAction))
+		btns = append(btns, kb(keys.Filters, "filters", ColorMeta))
 	case TabPRs:
-		add(&hints, keys.New, "new PR", green)
-		add(&hints, keys.Filters, "filters", amber)
+		btns = append(btns, kb(keys.New, "new PR", ColorAction))
+		btns = append(btns, kb(keys.Filters, "filters", ColorMeta))
 	}
-	add(&hints, keys.Config, "config", amber)
-	add(&hints, keys.Refresh, "refresh", green)
-	add(&hints, keys.Help, "help", amber)
-	add(&hints, keys.Quit, "quit", red)
+	btns = append(btns,
+		kb(keys.Config, "config", ColorMeta),
+		kb(keys.Refresh, "refresh", ColorAction),
+		kb(keys.Help, "help", ColorMeta),
+		kb(keys.Quit, "quit", ColorDanger),
+	)
 
-	return buildButtonFooter(hints, width)
+	return RenderFooterBar(width, btns...)
 }
 
 // helpOverlayView renders a context-sensitive shortcut reference.
