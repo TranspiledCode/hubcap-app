@@ -1,8 +1,13 @@
 // button.go — reusable key-hint button for the footer bar.
 //
-// A KeyButton renders as a compact single-row label:
+// A KeyButton renders as a single-row label where the key text has all four
+// edges of a box traced using text decorations + pipe characters:
 //
 //   │ enter │  open
+//
+// The overline decoration draws a line at the very top of the character cell,
+// the underline at the very bottom, and │ pipes close the left and right sides.
+// The result looks like a complete bordered box in a single terminal row.
 //
 // Usage:
 //
@@ -18,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // footerBg is the background colour shared by all footer elements.
@@ -32,9 +38,9 @@ var (
 
 // KeyButton is a key label paired with a short description.
 type KeyButton struct {
-	Key   string         // text shown inside the bars  (e.g. "enter")
-	Desc  string         // label to the right           (e.g. "open")
-	Color lipgloss.Color // bar + key foreground colour
+	Key   string         // text shown inside the button  (e.g. "enter")
+	Desc  string         // label to the right            (e.g. "open")
+	Color lipgloss.Color // border + key foreground colour
 }
 
 // NewKeyButton is a convenience constructor.
@@ -42,25 +48,34 @@ func NewKeyButton(key, desc string, color lipgloss.Color) KeyButton {
 	return KeyButton{Key: key, Desc: desc, Color: color}
 }
 
-// Render returns a single-row string:  │ enter │  open
+// Render returns a single-row string where all four sides of the button are
+// visible:
+//
+//   │ enter │  open
+//   ↑       ↑
+//   overline+underline span the full width; │ close left and right.
 func (b KeyButton) Render() string {
-	pipe := lipgloss.NewStyle().
-		Foreground(b.Color).
-		Background(footerBg).
-		Render("│")
+	p  := termenv.ColorProfile()
+	fg := p.Color(string(b.Color))
+	bg := p.Color(string(footerBg))
 
-	text := lipgloss.NewStyle().
-		Foreground(b.Color).
-		Background(footerBg).
-		Bold(true).
-		Render(" " + b.Key + " ")
+	// The full button — pipes + key text — gets overline, underline, bold, and
+	// color applied as one unit so the top and bottom decoration lines run edge
+	// to edge across the button (including the corner pipes).
+	btn := termenv.String("│ "+b.Key+" │").
+		Bold().
+		Overline().
+		Underline().
+		Foreground(fg).
+		Background(bg).
+		String()
 
 	desc := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("244")).
 		Background(footerBg).
 		Render(" " + b.Desc)
 
-	return pipe + text + pipe + desc
+	return btn + desc
 }
 
 // RenderFooterBar lays out buttons in a single row separated by gaps and pads
