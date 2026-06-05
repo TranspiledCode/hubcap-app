@@ -202,7 +202,13 @@ func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
 				rows[i] = lipgloss.NewStyle().MaxWidth(width).Render(row)
 			}
 		}
-		return strings.Join(rows, "\n")
+		// Separator line above the button strip.
+		sep := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("238")).
+			Background(themeBg(theme)).
+			Render(strings.Repeat("─", width))
+
+		return sep + "\n" + strings.Join(rows, "\n")
 	}
 
 	// ── Minimal / Default: single row ─────────────────────────────────────────
@@ -224,7 +230,8 @@ func CenterInFooterBar(content string, width int, theme UITheme) string {
 	if theme != ThemeComfortable {
 		return content
 	}
-	// Comfortable: wrap in 3-row block to match bordered button height.
+	// Comfortable: separator + 3-row block to match RenderFooterBar height.
+	sep   := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Background(themeBg(theme)).Render(strings.Repeat("─", width))
 	blank := bgSt.Width(width).Render("")
-	return blank + "\n" + content + "\n" + blank
+	return sep + "\n" + blank + "\n" + content + "\n" + blank
 }
