@@ -128,9 +128,15 @@ func (b KeyButton) Render(theme UITheme) string {
 			Bold(true).
 			Render(b.Key)
 
+		// Height(3) + AlignVertical(Center) makes the label occupy the same
+		// 3 rows as the border box so the background fills the full height —
+		// without this the 1-row description text leaves transparent rows
+		// above and below it when joined alongside the taller button.
 		label := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
 			Background(bg).
+			Height(3).
+			AlignVertical(lipgloss.Center).
 			Render(" " + b.Desc)
 
 		return lipgloss.JoinHorizontal(lipgloss.Center, border, label)
