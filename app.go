@@ -656,6 +656,7 @@ func detailActionFooter(m AppModel, width int) string {
 			kb(keys.IssueAssign, assignLabel, ColorAction),
 			kb(keys.IssueDevelop, "develop", ColorAction),
 			kb(keys.Browser, "browser", ColorMeta),
+			kb(keys.Help, "more actions", ColorMeta),
 		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
 		closeLabel := "close"
@@ -668,6 +669,7 @@ func detailActionFooter(m AppModel, width int) string {
 			kb(keys.PRCheckout, "checkout", ColorAction),
 			kb(keys.PRMerge, "merge", ColorAction),
 			kb(keys.Browser, "browser", ColorMeta),
+			kb(keys.Help, "more actions", ColorMeta),
 		}
 	}
 
