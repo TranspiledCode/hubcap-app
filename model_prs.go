@@ -172,7 +172,15 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 
 	checksStr := prRowChecks(pr.StatusRollup, bgKey)
 
-	labelStr := issueRowLabels(pr.Labels, bgKey, 28)
+	// Right column budget: ~40% of list width; labels fill what author+checks don't use.
+	rightBudget := width * 40 / 100
+	authorW := lipgloss.Width(authorStr)
+	checksW := lipgloss.Width(checksStr)
+	labelBudget := rightBudget - authorW - checksW - 4 // 4 = two "  " separators
+	if labelBudget < 5 {
+		labelBudget = 5
+	}
+	labelStr := issueRowLabels(pr.Labels, bgKey, labelBudget)
 
 	sep := base.Foreground(lipgloss.Color("238")).Render("  ")
 	rightStr := authorStr
