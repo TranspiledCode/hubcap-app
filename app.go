@@ -635,32 +635,52 @@ func detailActionFooter(m AppModel, width int) string {
 	return RenderFooterBar(width, theme, btns...)
 }
 
-func footerView(activeTab TabID, width int, theme UITheme) string {
+func footerView(m AppModel, width int, theme UITheme) string {
 	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
 		return NewKeyButton(b.Help().Key, desc, c)
 	}
 
-	btns := []KeyButton{
-		kb(keys.Up, "navigate", ColorAction),
-		kb(keys.Open, "open", ColorAction),
-		kb(keys.Tab, "switch view", ColorMeta),
+	// List-level action feedback (e.g. assign from list) — show toast in place
+	// of the normal buttons so the user knows the action is in flight or done.
+	if m.activeTab == TabIssues && !m.issues.showDetail {
+		if m.issues.actionErr != nil {
+			return footerToast(m.issues.actionErr.Error(), true, width, theme)
+		}
+		if m.issues.actionMsg != "" {
+			return footerToast(m.issues.actionMsg, false, width, theme)
+		}
+		if m.issues.actionPending != "" {
+			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme)
+		}
 	}
-	switch activeTab {
-	case TabIssues:
-		btns = append(btns, kb(keys.New, "new issue", ColorAction))
-		btns = append(btns, kb(keys.Filters, "filters", ColorMeta))
-	case TabPRs:
-		btns = append(btns, kb(keys.New, "new PR", ColorAction))
-		btns = append(btns, kb(keys.Filters, "filters", ColorMeta))
-	}
-	btns = append(btns,
-		kb(keys.Config, "config", ColorMeta),
-		kb(keys.Refresh, "refresh", ColorAction),
-		kb(keys.Help, "help", ColorMeta),
-		kb(keys.Quit, "quit", ColorDanger),
-	)
 
-	return RenderFooterBar(width, theme, btns...)
+	switch m.activeTab {
+	case TabDashboard:
+		return RenderFooterBar(width, theme,
+			kb(keys.Up, "navigate", ColorAction),
+			kb(keys.Open, "open", ColorAction),
+			kb(keys.Tab, "switch view", ColorMeta),
+			kb(keys.Help, "shortcuts", ColorMeta),
+		)
+	case TabIssues:
+		return RenderFooterBar(width, theme,
+			kb(keys.Open, "open", ColorAction),
+			kb(keys.Browser, "browser", ColorMeta),
+			kb(keys.New, "new issue", ColorAction),
+			kb(keys.IssueAssign, "assign", ColorAction),
+			kb(keys.Help, "shortcuts", ColorMeta),
+		)
+	case TabPRs:
+		return RenderFooterBar(width, theme,
+			kb(keys.Open, "open", ColorAction),
+			kb(keys.Browser, "browser", ColorMeta),
+			kb(keys.New, "new PR", ColorAction),
+			kb(keys.PRCheckout, "checkout", ColorAction),
+			kb(keys.Help, "shortcuts", ColorMeta),
+		)
+	default:
+		return RenderFooterBar(width, theme, kb(keys.Help, "shortcuts", ColorMeta))
+	}
 }
 
 // helpOverlayView renders a context-sensitive shortcut reference.
@@ -799,7 +819,7 @@ func (m AppModel) View() string {
 	case inDetail:
 		footer = detailActionFooter(m, innerW)
 	default:
-		footer = footerView(m.activeTab, innerW, theme)
+		footer = footerView(m, innerW, theme)
 	}
 
 	headerLines := strings.Count(header, "\n")

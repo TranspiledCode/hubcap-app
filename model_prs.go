@@ -580,6 +580,11 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		// List view keys — only fire outside of the list's filter input.
 		if !m.list.SettingFilter() {
 			switch {
+			case key.Matches(msg, keys.Browser):
+				if item, ok := m.list.SelectedItem().(prListItem); ok {
+					url := item.pr.URL
+					return m, func() tea.Msg { github.OpenURL(url); return nil }
+				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
 				m.formVals.newBody = ""
