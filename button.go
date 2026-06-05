@@ -177,8 +177,11 @@ func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
 
 	// ── Comfortable: 3-row JoinHorizontal layout ──────────────────────────────
 	if theme == ThemeComfortable {
-		edge := bgSt.Render("  ")
-		gap  := bgSt.Render("   ")
+		// Width + Height make each spacer a solid background rectangle that
+		// matches the button height — a 1-row spacer would leave transparent
+		// rows above and below when joined alongside the 3-row buttons.
+		edge := bgSt.Width(2).Height(3).Render("")
+		gap  := bgSt.Width(3).Height(3).Render("")
 		parts := make([]string, 0, len(buttons)*2+2)
 		parts = append(parts, edge)
 		for i, btn := range buttons {
