@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -130,6 +131,7 @@ type AppModel struct {
 
 	// showHelp is true while the ? help overlay is visible.
 	showHelp bool
+	helpVP   viewport.Model
 
 	// Auto-refresh state (global across all tabs)
 	lastRefreshTime int64 // Unix timestamp of last refresh
@@ -151,6 +153,9 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 	prs := newPRsModel(prFilters)
 	prs.uiTheme = theme
 
+	helpVP := viewport.New(80, 20) // resized on first WindowSizeMsg / help open
+	helpVP.Style = lipgloss.NewStyle()
+
 	return AppModel{
 		activeTab:       TabDashboard,
 		screen:          ScreenList,
@@ -163,6 +168,7 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 		issueFilterVals: &IssueFilterVals{},
 		prFilterVals:    &PRFilterVals{},
 		configVals:      &ConfigVals{},
+		helpVP:          helpVP,
 	}
 }
 
@@ -251,15 +257,24 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Snapshot detail state before processing — used to detect header changes.
 	wasInDetail := inDetailMode(m)
 
-	// ── Help overlay — dismiss on any key ────────────────────────────────────
+	// ── Help overlay — scroll or dismiss ─────────────────────────────────────
 	if m.showHelp {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			m.showHelp = false
-			return m, nil
-		}
 		if wm, ok := msg.(tea.WindowSizeMsg); ok {
 			m.width = wm.Width
 			m.height = wm.Height
+			m.helpVP.Width = wm.Width - 4
+			m.helpVP.Height = wm.Height - 5
+		}
+		if kmsg, ok := msg.(tea.KeyMsg); ok {
+			switch kmsg.String() {
+			case "up", "k", "down", "j", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+				var cmd tea.Cmd
+				m.helpVP, cmd = m.helpVP.Update(kmsg)
+				return m, cmd
+			default:
+				m.showHelp = false
+				return m, nil
+			}
 		}
 		return m, nil
 	}
@@ -438,6 +453,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, keys.Help) && !m.hasActiveForm():
 			m.showHelp = !m.showHelp
+			if m.showHelp {
+				m.helpVP.Width = m.width - 4
+				m.helpVP.Height = m.height - 5
+				m.helpVP.SetContent(buildHelpContent(m.width - 4))
+				m.helpVP.GotoTop()
+			}
 			return m, nil
 		case key.Matches(msg, keys.Quit) && !m.hasActiveForm():
 			m.confirmingQuit = true
@@ -731,23 +752,22 @@ func footerView(m AppModel, width int, theme UITheme) string {
 	}
 }
 
-// helpOverlayView renders a context-sensitive shortcut reference.
-// It uses the same border style as other overlays and derives key names
-// directly from the central keys registry so descriptions never drift.
-func helpOverlayView(m AppModel, innerW int) string {
-	titleStyle  := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+// buildHelpContent returns the full scrollable help text showing every
+// keyboard shortcut in the application, organised by section.
+// contentW is the available visual width for line-length purposes.
+func buildHelpContent(contentW int) string {
+	titleStyle   := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-	keyStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	descStyle   := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	dimStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	keyStyle     := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	descStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	dimStyle     := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
-	// keyColW is the visual column width reserved for the key badge so all
-	// descriptions start at the same horizontal position. Wide enough for
-	// the longest badge: "[shift+tab]" = 11 chars.
+	// keyColW reserves enough space for the widest badge "[shift+tab]" (11
+	// visible chars) plus a comfortable gap before the description.
 	const keyColW = 16
 
-	// line renders one shortcut row. Pass desc="" to use the binding's own
-	// help description.
+	// line renders one shortcut row with a fixed-width key column.
+	// Pass desc="" to fall back to the binding's own help description.
 	line := func(b key.Binding, desc string) string {
 		if desc == "" {
 			desc = b.Help().Desc
@@ -764,80 +784,87 @@ func helpOverlayView(m AppModel, innerW int) string {
 		return "\n  " + sectionStyle.Render(title) + "\n"
 	}
 
-	var buf strings.Builder
-	buf.WriteString("\n  " + titleStyle.Render("KEYBOARD SHORTCUTS") + "\n")
-	buf.WriteString("  " + dimStyle.Render(strings.Repeat("─", innerW-6)) + "\n")
+	hr := dimStyle.Render(strings.Repeat("─", contentW-4))
 
-	// ── General (always shown) ────────────────────────────────────────────
+	var buf strings.Builder
+
+	buf.WriteString("\n  " + titleStyle.Render("KEYBOARD SHORTCUTS") + "\n")
+	buf.WriteString("  " + hr + "\n")
+
+	// ── General ───────────────────────────────────────────────────────────
 	buf.WriteString(sec("General"))
 	buf.WriteString(line(keys.Tab,      "switch to next tab") + "\n")
 	buf.WriteString(line(keys.ShiftTab, "switch to previous tab") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Config,  "open settings") + "\n")
-	buf.WriteString(line(keys.Refresh, "") + "\n")
+	buf.WriteString(line(keys.Refresh, "refresh current view") + "\n")
 	buf.WriteString("\n")
-	buf.WriteString(line(keys.Help, "close this screen") + "\n")
-	buf.WriteString(line(keys.Quit, "") + "\n")
+	buf.WriteString(line(keys.Help, "open / close this screen") + "\n")
+	buf.WriteString(line(keys.Quit, "quit") + "\n")
 
-	inDetail := inDetailMode(m)
+	// ── Browse (list view) ────────────────────────────────────────────────
+	buf.WriteString(sec("Browse"))
+	buf.WriteString(line(keys.Up,     "navigate up / down") + "\n")
+	buf.WriteString(line(keys.Top,    "jump to top") + "\n")
+	buf.WriteString(line(keys.Bottom, "jump to bottom") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Open,    "open item") + "\n")
+	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+	buf.WriteString(line(keys.Filters, "filter list") + "\n")
 
-	if !inDetail {
-		// ── Browse (list view) ────────────────────────────────────────────
-		buf.WriteString(sec("Browse"))
-		buf.WriteString(line(keys.Up,     "navigate up / down") + "\n")
-		buf.WriteString(line(keys.Top,    "jump to top") + "\n")
-		buf.WriteString(line(keys.Bottom, "jump to bottom") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Open,    "open") + "\n")
-		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Filters, "") + "\n")
-		switch m.activeTab {
-		case TabIssues:
-			buf.WriteString(line(keys.New,         "new issue") + "\n")
-			buf.WriteString(line(keys.IssueAssign, "grab / take / drop") + "\n")
-		case TabPRs:
-			buf.WriteString(line(keys.New, "new PR") + "\n")
-		}
-	}
+	// ── Issues list ───────────────────────────────────────────────────────
+	buf.WriteString(sec("Issues — List"))
+	buf.WriteString(line(keys.New,        "create new issue") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "grab (unassigned) / take (from someone) / drop (yourself)") + "\n")
 
-	if m.activeTab == TabIssues && inDetail {
-		// ── Issue detail ──────────────────────────────────────────────────
-		buf.WriteString(sec("Issue"))
-		buf.WriteString(line(keys.IssueDevelop, "create branch") + "\n")
-		buf.WriteString(line(keys.IssuePR,      "create pull request") + "\n")
-		buf.WriteString(line(keys.IssueClose,   "close / reopen") + "\n")
-		buf.WriteString(line(keys.IssueAssign,  "assign / unassign @me") + "\n")
-		buf.WriteString(line(keys.IssueLabel,   "add label") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
-		buf.WriteString(line(keys.CopyURL, "copy URL") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Refresh, "") + "\n")
-		buf.WriteString(line(keys.Back,    "back to list") + "\n")
-	}
+	// ── Issue detail ──────────────────────────────────────────────────────
+	buf.WriteString(sec("Issues — Detail"))
+	buf.WriteString(line(keys.IssueDevelop, "create a branch for this issue") + "\n")
+	buf.WriteString(line(keys.IssuePR,      "create a pull request") + "\n")
+	buf.WriteString(line(keys.IssueClose,   "close / reopen issue") + "\n")
+	buf.WriteString(line(keys.IssueAssign,  "assign / unassign @me") + "\n")
+	buf.WriteString(line(keys.IssueLabel,   "add label") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Refresh, "refresh issue") + "\n")
+	buf.WriteString(line(keys.Back,    "back to list") + "\n")
 
-	if m.activeTab == TabPRs && inDetail {
-		// ── PR detail ─────────────────────────────────────────────────────
-		buf.WriteString(sec("Pull Request"))
-		buf.WriteString(line(keys.PRCheckout, "checkout branch") + "\n")
-		buf.WriteString(line(keys.PRMerge,    "merge") + "\n")
-		buf.WriteString(line(keys.PRClose,    "close / reopen") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
-		buf.WriteString(line(keys.CopyURL, "copy URL") + "\n")
-		buf.WriteString("\n")
-		buf.WriteString(line(keys.Refresh, "") + "\n")
-		buf.WriteString(line(keys.Back,    "back to list") + "\n")
-	}
+	// ── Pull requests list ────────────────────────────────────────────────
+	buf.WriteString(sec("Pull Requests — List"))
+	buf.WriteString(line(keys.New,     "create new pull request") + "\n")
+	buf.WriteString(line(keys.Browser, "open selected PR in browser") + "\n")
 
-	buf.WriteString("\n  " + dimStyle.Render("Press any key to close") + "\n")
+	// ── Pull request detail ───────────────────────────────────────────────
+	buf.WriteString(sec("Pull Requests — Detail"))
+	buf.WriteString(line(keys.PRCheckout, "checkout branch locally") + "\n")
+	buf.WriteString(line(keys.PRMerge,    "merge pull request") + "\n")
+	buf.WriteString(line(keys.PRClose,    "close / reopen pull request") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Refresh, "refresh PR") + "\n")
+	buf.WriteString(line(keys.Back,    "back to list") + "\n")
+
+	buf.WriteString("\n")
+	return buf.String()
+}
+
+// helpOverlayView renders the full keyboard-shortcut reference inside a
+// scrollable viewport. ↑/↓ scroll; any other key dismisses.
+func helpOverlayView(m AppModel, innerW int) string {
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
+	hint := "  " + dimStyle.Render("↑ / ↓  scroll    ·    any other key to close")
 
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("208")).
-		Width(innerW)
-	return appBorder.Render(buf.String())
+		Width(innerW).
+		Height(m.height - 2)
+	return appBorder.Render(m.helpVP.View() + "\n" + hint)
 }
 
 func (m AppModel) View() string {
