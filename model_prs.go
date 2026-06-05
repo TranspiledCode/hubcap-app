@@ -9,6 +9,7 @@ import (
 
 	"hubcap/internal/github"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -267,7 +268,6 @@ type PRsModel struct {
 	activeForm *huh.Form
 	formVals   *prFormVals
 
-	action string
 }
 
 func newPRsModel(filters github.PRFilters) PRsModel {
@@ -284,6 +284,12 @@ func newPRsModel(filters github.PRFilters) PRsModel {
 	// SetEnabled(false), which gets overridden on every item load.
 	l.DisableQuitKeybindings()
 
+	// Align the list's navigation key map with our central registry.
+	l.KeyMap.CursorUp = keys.Up
+	l.KeyMap.CursorDown = keys.Down
+	l.KeyMap.GoToStart = keys.Top
+	l.KeyMap.GoToEnd = keys.Bottom
+
 	return PRsModel{
 		list:     l,
 		spinner:  s,
@@ -292,6 +298,9 @@ func newPRsModel(filters github.PRFilters) PRsModel {
 		formVals: &prFormVals{mergeType: "rebase", newBase: "main"},
 	}
 }
+
+// IsFiltering reports whether the list's inline filter is currently active.
+func (m PRsModel) IsFiltering() bool { return m.list.SettingFilter() }
 
 func (m PRsModel) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -473,32 +482,25 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 
 		if m.showDetail {
-			switch msg.String() {
-			case "esc", "b", "backspace":
+			switch {
+			case key.Matches(msg, keys.Back):
 				m.showDetail = false
 				m.actionMsg = ""
 				m.actionErr = nil
 				return m, nil
-			case "q":
-				m.action = "quit"
-				return m, nil
-			case "tab":
-				m.showDetail = false
-				m.action = "switch"
-				return m, nil
-			case "r":
+			case key.Matches(msg, keys.Refresh):
 				m.loadingDetail = true
 				m.actionMsg = ""
 				m.actionErr = nil
 				return m, fetchPRDetailCmd(m.detailPR.Number)
-			case "o":
+			case key.Matches(msg, keys.Browser):
 				// Open in browser — instant, no pending indicator needed.
 				url := m.detailPR.URL
 				return m, func() tea.Msg {
 					github.OpenURL(url)
 					return nil
 				}
-			case "u":
+			case key.Matches(msg, keys.CopyURL):
 				m.actionPending = ""
 				if err := copyText(m.detailPR.URL); err != nil {
 					m.actionErr = err
@@ -508,7 +510,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					m.actionErr = nil
 				}
 				return m, clearPRActionMsgCmd()
-			case "x":
+			case key.Matches(msg, keys.PRClose):
 				// Close or Reopen PR
 				pr := m.detailPR
 				isClosed := strings.EqualFold(pr.State, "closed")
@@ -534,7 +536,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					}
 					return prActionDoneMsg{message: done, number: pr.Number}
 				})
-			case "c":
+			case key.Matches(msg, keys.PRCheckout):
 				// Checkout branch.
 				pr := m.detailPR
 				m.actionPending = fmt.Sprintf("Checking out %q…", pr.HeadRefName)
@@ -548,7 +550,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 						message: fmt.Sprintf("Checked out branch %q.", pr.HeadRefName),
 					}
 				})
-			case "m":
+			case key.Matches(msg, keys.PRMerge):
 				// Merge — embedded select form for strategy choice.
 				m.formVals.mergeType = "rebase"
 				m.formVals.formType = prFormMerge
@@ -572,10 +574,10 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		switch msg.String() {
-		case "n":
-			if !m.list.SettingFilter() {
-				// New PR — embedded form.
+		// List view keys — only fire outside of the list's filter input.
+		if !m.list.SettingFilter() {
+			switch {
+			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
 				m.formVals.newBody = ""
 				m.formVals.newBase = "main"
@@ -600,29 +602,18 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 						Value(&m.formVals.newDraft),
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
 				return m, m.activeForm.Init()
-			}
-		case "enter":
-			if item, ok := m.list.SelectedItem().(prListItem); ok {
-				m.loadingDetail = true
-				cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
-				cmds = append(cmds, m.spinner.Tick)
-			}
-		case "r":
-			if !m.list.SettingFilter() {
+			case key.Matches(msg, keys.Refresh):
 				m.loading = true
 				m.loaded = false
 				cmds = append(cmds, m.fetchCmd())
 				cmds = append(cmds, m.spinner.Tick)
 			}
-		case "q":
-			if !m.list.SettingFilter() {
-				m.action = "quit"
-				return m, nil
-			}
-		case "tab":
-			if !m.list.SettingFilter() {
-				m.action = "switch"
-				return m, nil
+		}
+		if key.Matches(msg, keys.Open) {
+			if item, ok := m.list.SelectedItem().(prListItem); ok {
+				m.loadingDetail = true
+				cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
+				cmds = append(cmds, m.spinner.Tick)
 			}
 		}
 	}

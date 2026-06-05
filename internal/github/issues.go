@@ -59,6 +59,11 @@ func AssignIssueSelf(number int) error {
 	return err
 }
 
+func UnassignIssueSelf(number int) error {
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--remove-assignee", "@me")
+	return err
+}
+
 func AddIssueLabel(number int, label string) error {
 	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
 	return err

@@ -9,6 +9,7 @@ import (
 
 	"hubcap/internal/github"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -271,8 +272,6 @@ type IssuesModel struct {
 	activeForm *huh.Form
 	formVals   *issueFormVals
 
-	// Navigation signal back to AppModel
-	action string
 }
 
 func newIssuesModel(filters github.Filters) IssuesModel {
@@ -292,6 +291,13 @@ func newIssuesModel(filters github.Filters) IssuesModel {
 	// items load or filter state changes.
 	l.DisableQuitKeybindings()
 
+	// Align the list's navigation key map with our central registry so that
+	// j/k/g/G work consistently and the source of truth is always keys.go.
+	l.KeyMap.CursorUp = keys.Up
+	l.KeyMap.CursorDown = keys.Down
+	l.KeyMap.GoToStart = keys.Top
+	l.KeyMap.GoToEnd = keys.Bottom
+
 	return IssuesModel{
 		list:     l,
 		spinner:  s,
@@ -300,6 +306,10 @@ func newIssuesModel(filters github.Filters) IssuesModel {
 		formVals: &issueFormVals{},
 	}
 }
+
+// IsFiltering reports whether the list's inline filter is currently active.
+// AppModel uses this to suppress global shortcuts (e.g. tab/q) while typing.
+func (m IssuesModel) IsFiltering() bool { return m.list.SettingFilter() }
 
 func (m IssuesModel) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -508,32 +518,25 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 
 		if m.showDetail {
-			switch msg.String() {
-			case "esc", "b", "backspace":
+			switch {
+			case key.Matches(msg, keys.Back):
 				m.showDetail = false
 				m.actionMsg = ""
 				m.actionErr = nil
 				return m, nil
-			case "q":
-				m.action = "quit"
-				return m, nil
-			case "tab":
-				m.showDetail = false
-				m.action = "switch"
-				return m, nil
-			case "r":
+			case key.Matches(msg, keys.Refresh):
 				m.loadingDetail = true
 				m.actionMsg = ""
 				m.actionErr = nil
 				return m, fetchIssueDetailCmd(m.detailIssue.Number)
-			case "o":
+			case key.Matches(msg, keys.Browser):
 				// Open in browser — instant, no pending indicator needed.
 				url := m.detailIssue.URL
 				return m, func() tea.Msg {
 					github.OpenURL(url)
 					return nil
 				}
-			case "u":
+			case key.Matches(msg, keys.CopyURL):
 				m.actionPending = ""
 				if err := copyText(m.detailIssue.URL); err != nil {
 					m.actionErr = err
@@ -543,7 +546,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 					m.actionErr = nil
 				}
 				return m, clearIssueActionMsgCmd()
-			case "c":
+			case key.Matches(msg, keys.IssueClose):
 				issue := m.detailIssue
 				if strings.EqualFold(issue.State, "closed") {
 					m.actionPending = "Reopening issue…"
@@ -567,18 +570,29 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 					}
 					return issueActionDoneMsg{message: done, number: issue.Number}
 				})
-			case "a":
+			case key.Matches(msg, keys.IssueAssign):
+				issue := m.detailIssue
+				if len(issue.Assignees) > 0 {
+					m.actionPending = "Unassigning from @me…"
+					m.actionMsg = ""
+					m.actionErr = nil
+					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+						if err := github.UnassignIssueSelf(issue.Number); err != nil {
+							return issueActionErrMsg{err: err}
+						}
+						return issueActionDoneMsg{message: "Unassigned from @me.", number: issue.Number}
+					})
+				}
 				m.actionPending = "Assigning to @me…"
 				m.actionMsg = ""
 				m.actionErr = nil
-				issue := m.detailIssue
 				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 					if err := github.AssignIssueSelf(issue.Number); err != nil {
 						return issueActionErrMsg{err: err}
 					}
 					return issueActionDoneMsg{message: "Assigned to @me.", number: issue.Number}
 				})
-			case "l":
+			case key.Matches(msg, keys.IssueLabel):
 				// Add label — embedded input form.
 				m.formVals.labelVal = ""
 				m.formVals.formType = issueFormLabel
@@ -589,7 +603,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Value(&m.formVals.labelVal),
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
 				return m, m.activeForm.Init()
-			case "d":
+			case key.Matches(msg, keys.IssueDevelop):
 				// Develop branch — embedded input form pre-filled with suggested name.
 				defaultBranch := deriveBranchName(m.detailIssue.Number, m.detailIssue.Title)
 				m.formVals.branchDefault = defaultBranch
@@ -602,7 +616,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Value(&m.formVals.branchVal),
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
 				return m, m.activeForm.Init()
-			case "p":
+			case key.Matches(msg, keys.IssuePR):
 				// Create PR from current branch using --fill (no user input needed).
 				m.actionPending = "Creating PR…"
 				m.actionMsg = ""
@@ -621,11 +635,10 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// List view keys
-		switch msg.String() {
-		case "n":
-			if !m.list.SettingFilter() {
-				// New issue — embedded form.
+		// List view keys — only fire outside of the list's filter input.
+		if !m.list.SettingFilter() {
+			switch {
+			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
 				m.formVals.newBody = ""
 				m.formVals.formType = issueFormNew
@@ -641,29 +654,18 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Value(&m.formVals.newBody),
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
 				return m, m.activeForm.Init()
-			}
-		case "enter":
-			if item, ok := m.list.SelectedItem().(issueListItem); ok {
-				m.loadingDetail = true
-				cmds = append(cmds, fetchIssueDetailCmd(item.issue.Number))
-				cmds = append(cmds, m.spinner.Tick)
-			}
-		case "r":
-			if !m.list.SettingFilter() {
+			case key.Matches(msg, keys.Refresh):
 				m.loading = true
 				m.loaded = false
 				cmds = append(cmds, m.fetchCmd())
 				cmds = append(cmds, m.spinner.Tick)
 			}
-		case "q":
-			if !m.list.SettingFilter() {
-				m.action = "quit"
-				return m, nil
-			}
-		case "tab":
-			if !m.list.SettingFilter() {
-				m.action = "switch"
-				return m, nil
+		}
+		if key.Matches(msg, keys.Open) {
+			if item, ok := m.list.SelectedItem().(issueListItem); ok {
+				m.loadingDetail = true
+				cmds = append(cmds, fetchIssueDetailCmd(item.issue.Number))
+				cmds = append(cmds, m.spinner.Tick)
 			}
 		}
 	}
