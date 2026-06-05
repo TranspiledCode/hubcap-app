@@ -275,6 +275,10 @@ type IssuesModel struct {
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
+
+	// currentUser is the authenticated GitHub login, used to distinguish
+	// Grab / Take / Drop when the user presses 'a' on the issue list.
+	currentUser string
 }
 
 func newIssuesModel(filters github.Filters) IssuesModel {
@@ -652,25 +656,34 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			case key.Matches(msg, keys.IssueAssign):
 				if item, ok := m.list.SelectedItem().(issueListItem); ok {
 					issue := item.issue
-					if len(issue.Assignees) > 0 {
-						m.actionPending = "Unassigning from @me…"
+					if isMeAssigned(issue.Assignees, m.currentUser) {
+						// Drop — remove @me, leave any other assignees.
+						m.actionPending = "Dropping…"
 						m.actionMsg = ""
 						m.actionErr = nil
 						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 							if err := github.UnassignIssueSelf(issue.Number); err != nil {
 								return issueActionErrMsg{err: err}
 							}
-							return issueActionDoneMsg{message: "Unassigned from @me.", silentRefresh: true}
+							return issueActionDoneMsg{message: "Dropped.", silentRefresh: true}
 						})
 					}
-					m.actionPending = "Assigning to @me…"
+					// Grab (unassigned) or Take (assigned to someone else).
+					verb := "Grabbing…"
+					done := "Grabbed."
+					if len(issue.Assignees) > 0 {
+						verb = "Taking…"
+						done = "Taken."
+					}
+					m.actionPending = verb
 					m.actionMsg = ""
 					m.actionErr = nil
+					doneMsg := done
 					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 						if err := github.AssignIssueSelf(issue.Number); err != nil {
 							return issueActionErrMsg{err: err}
 						}
-						return issueActionDoneMsg{message: "Assigned to @me.", silentRefresh: true}
+						return issueActionDoneMsg{message: doneMsg, silentRefresh: true}
 					})
 				}
 			case key.Matches(msg, keys.New):

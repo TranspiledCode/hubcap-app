@@ -134,6 +134,10 @@ type AppModel struct {
 	// Auto-refresh state (global across all tabs)
 	lastRefreshTime int64 // Unix timestamp of last refresh
 	timerTick       int   // Counter to force view updates every second
+
+	// currentUser is the GitHub login of the authenticated user, fetched once
+	// at startup. Used to distinguish Grab / Take / Drop on the issues list.
+	currentUser string
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters) AppModel {
@@ -162,11 +166,24 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 	}
 }
 
+type currentUserFetchedMsg struct {
+	login string
+	err   error
+}
+
+func fetchCurrentUserCmd() tea.Cmd {
+	return func() tea.Msg {
+		login, err := github.GetCurrentUser()
+		return currentUserFetchedMsg{login: login, err: err}
+	}
+}
+
 func (m AppModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.spinner.Tick,
 		m.dashboard.spinner.Tick,
 		m.dashboard.fetchCmd(),
+		fetchCurrentUserCmd(),
 	}
 	// Start auto-refresh ticker if enabled
 	if m.cfg.AutoRefreshEnabled {
@@ -328,6 +345,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case currentUserFetchedMsg:
+		if msg.err == nil {
+			m.currentUser = msg.login
+			m.issues.currentUser = msg.login
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -635,6 +659,20 @@ func detailActionFooter(m AppModel, width int) string {
 	return RenderFooterBar(width, theme, btns...)
 }
 
+// isMeAssigned reports whether login appears in the assignees list.
+// Returns false if login is empty (current user not yet fetched).
+func isMeAssigned(assignees []github.User, login string) bool {
+	if login == "" {
+		return false
+	}
+	for _, a := range assignees {
+		if strings.EqualFold(a.Login, login) {
+			return true
+		}
+	}
+	return false
+}
+
 func footerView(m AppModel, width int, theme UITheme) string {
 	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
 		return NewKeyButton(b.Help().Key, desc, c)
@@ -663,11 +701,21 @@ func footerView(m AppModel, width int, theme UITheme) string {
 			kb(keys.Help, "shortcuts", ColorMeta),
 		)
 	case TabIssues:
+		// Grab / Take / Drop label depends on the selected issue's assignees.
+		assignLabel, assignColor := "grab", ColorAction
+		if item, ok := m.issues.list.SelectedItem().(issueListItem); ok {
+			switch {
+			case isMeAssigned(item.issue.Assignees, m.currentUser):
+				assignLabel, assignColor = "drop", ColorDanger
+			case len(item.issue.Assignees) > 0:
+				assignLabel, assignColor = "take", ColorMeta
+			}
+		}
 		return RenderFooterBar(width, theme,
 			kb(keys.Open, "open", ColorAction),
 			kb(keys.Browser, "browser", ColorMeta),
 			kb(keys.New, "new issue", ColorAction),
-			kb(keys.IssueAssign, "assign", ColorAction),
+			NewKeyButton(keys.IssueAssign.Help().Key, assignLabel, assignColor),
 			kb(keys.Help, "shortcuts", ColorMeta),
 		)
 	case TabPRs:
