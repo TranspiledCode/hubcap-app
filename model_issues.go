@@ -272,6 +272,8 @@ type IssuesModel struct {
 	activeForm *huh.Form
 	formVals   *issueFormVals
 
+	// uiTheme mirrors Config.UITheme and controls form width + footer density.
+	uiTheme UITheme
 }
 
 func newIssuesModel(filters github.Filters) IssuesModel {
@@ -601,7 +603,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Add label").
 						Placeholder("label name").
 						Value(&m.formVals.labelVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
+				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssueDevelop):
 				// Develop branch — embedded input form pre-filled with suggested name.
@@ -614,7 +616,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Branch name").
 						Description(fmt.Sprintf("Default: %s", defaultBranch)).
 						Value(&m.formVals.branchVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
+				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssuePR):
 				// Create PR from current branch using --fill (no user input needed).
@@ -652,7 +654,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Placeholder("Describe the issue (optional)").
 						CharLimit(4000).
 						Value(&m.formVals.newBody),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
+				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true

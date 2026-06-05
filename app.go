@@ -141,14 +141,20 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 
+	theme := resolveTheme(cfg.UITheme)
+	issues := newIssuesModel(issueFilters)
+	issues.uiTheme = theme
+	prs := newPRsModel(prFilters)
+	prs.uiTheme = theme
+
 	return AppModel{
 		activeTab:       TabDashboard,
 		screen:          ScreenList,
 		repo:            repo,
 		cfg:             cfg,
 		spinner:         s,
-		issues:          newIssuesModel(issueFilters),
-		prs:             newPRsModel(prFilters),
+		issues:          issues,
+		prs:             prs,
 		dashboard:       newDashboardModel(cfg),
 		issueFilterVals: &IssueFilterVals{},
 		prFilterVals:    &PRFilterVals{},
@@ -278,8 +284,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := saveConfig(newCfg); err != nil {
 				// Handle error - for now just continue
 			}
-			// Update dashboard model with new config
+			// Propagate relevant settings to sub-models.
 			m.dashboard.cfg = newCfg
+			theme := resolveTheme(newCfg.UITheme)
+			m.issues.uiTheme = theme
+			m.prs.uiTheme = theme
 			// Start or restart auto-refresh ticker based on new config
 			if newCfg.AutoRefreshEnabled {
 				m.lastRefreshTime = time.Now().Unix()
@@ -335,14 +344,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filterDataFetchedMsg:
 		m.filterLoading = false
 		m.filterLabels = msg.labels
+		theme := resolveTheme(m.cfg.UITheme)
+		fw := formWidth(m.width-2, theme)
 		if msg.forPRs {
 			InitPRFilterVals(m.prFilterVals, m.prs.filters, msg.assignees)
 			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels).
-				WithWidth(m.width - 8)
+				WithWidth(fw)
 		} else {
 			InitIssueFilterVals(m.issueFilterVals, m.issues.filters, msg.assignees)
 			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels).
-				WithWidth(m.width - 8)
+				WithWidth(fw)
 		}
 		return m, m.filterForm.Init()
 
@@ -418,7 +429,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Config) && !m.hasActiveForm():
 			// Open configuration form
 			InitConfigVals(m.configVals, m.cfg)
-			m.configForm = BuildConfigForm(m.configVals).WithWidth(m.width - 8)
+			m.configForm = BuildConfigForm(m.configVals).WithWidth(formWidth(m.width-2, resolveTheme(m.cfg.UITheme)))
 			return m, m.configForm.Init()
 		case key.Matches(msg, keys.Filters) && !m.hasActiveForm():
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
@@ -517,24 +528,24 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // quitConfirmFooter renders the quit confirmation prompt.
 // y/Y confirms; any other key cancels.
-func quitConfirmFooter(width int) string {
-	return RenderFooterBar(width,
+func quitConfirmFooter(width int, theme UITheme) string {
+	return RenderFooterBar(width, theme,
 		NewKeyButton("y", "confirm quit", ColorDanger),
 		NewKeyButton("any key", "cancel", ColorMeta),
 	)
 }
 
-// footerPendingToast renders a 3-row "working…" indicator with a spinner.
-func footerPendingToast(spinnerView string, msg string, width int) string {
+// footerPendingToast renders a "working…" indicator in the footer.
+func footerPendingToast(spinnerView string, msg string, width int, theme UITheme) string {
 	bgSt   := lipgloss.NewStyle().Background(footerBg)
 	spinSt := lipgloss.NewStyle().Background(footerBg).Foreground(ColorAction)
 	txtSt  := lipgloss.NewStyle().Background(footerBg).Foreground(lipgloss.Color("244"))
 	line   := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
-	return CenterInFooterBar(line, width)
+	return CenterInFooterBar(line, width, theme)
 }
 
-// footerToast renders a 3-row success / error toast notification.
-func footerToast(msg string, isErr bool, width int) string {
+// footerToast renders a success / error toast notification.
+func footerToast(msg string, isErr bool, width int, theme UITheme) string {
 	fg   := ColorAction // green
 	icon := "✓"
 	if isErr {
@@ -544,7 +555,7 @@ func footerToast(msg string, isErr bool, width int) string {
 	bgSt  := lipgloss.NewStyle().Background(footerBg)
 	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(fg).Bold(true)
 	line  := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
-	return CenterInFooterBar(line, width)
+	return CenterInFooterBar(line, width, theme)
 }
 
 // detailActionFooter renders the context-specific footer shown in detail views.
@@ -552,28 +563,30 @@ func footerToast(msg string, isErr bool, width int) string {
 // hints for the duration of the auto-dismiss timer — keeping the layout height
 // exactly constant.
 func detailActionFooter(m AppModel, width int) string {
+	theme := resolveTheme(m.cfg.UITheme)
+
 	// Toast / pending indicator — shown in place of key hints.
 	// Priority: error > success > pending (working…)
 	if m.activeTab == TabIssues && m.issues.showDetail {
 		if m.issues.actionErr != nil {
-			return footerToast(m.issues.actionErr.Error(), true, width)
+			return footerToast(m.issues.actionErr.Error(), true, width, theme)
 		}
 		if m.issues.actionMsg != "" {
-			return footerToast(m.issues.actionMsg, false, width)
+			return footerToast(m.issues.actionMsg, false, width, theme)
 		}
 		if m.issues.actionPending != "" {
-			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width)
+			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme)
 		}
 	}
 	if m.activeTab == TabPRs && m.prs.showDetail {
 		if m.prs.actionErr != nil {
-			return footerToast(m.prs.actionErr.Error(), true, width)
+			return footerToast(m.prs.actionErr.Error(), true, width, theme)
 		}
 		if m.prs.actionMsg != "" {
-			return footerToast(m.prs.actionMsg, false, width)
+			return footerToast(m.prs.actionMsg, false, width, theme)
 		}
 		if m.prs.actionPending != "" {
-			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width)
+			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width, theme)
 		}
 	}
 
@@ -619,10 +632,10 @@ func detailActionFooter(m AppModel, width int) string {
 		}
 	}
 
-	return RenderFooterBar(width, btns...)
+	return RenderFooterBar(width, theme, btns...)
 }
 
-func footerView(activeTab TabID, width int) string {
+func footerView(activeTab TabID, width int, theme UITheme) string {
 	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
 		return NewKeyButton(b.Help().Key, desc, c)
 	}
@@ -647,7 +660,7 @@ func footerView(activeTab TabID, width int) string {
 		kb(keys.Quit, "quit", ColorDanger),
 	)
 
-	return RenderFooterBar(width, btns...)
+	return RenderFooterBar(width, theme, btns...)
 }
 
 // helpOverlayView renders a context-sensitive shortcut reference.
@@ -778,14 +791,15 @@ func (m AppModel) View() string {
 		body = m.dashboard.View()
 	}
 
+	theme := resolveTheme(m.cfg.UITheme)
 	var footer string
 	switch {
 	case m.confirmingQuit:
-		footer = quitConfirmFooter(innerW)
+		footer = quitConfirmFooter(innerW, theme)
 	case inDetail:
 		footer = detailActionFooter(m, innerW)
 	default:
-		footer = footerView(m.activeTab, innerW)
+		footer = footerView(m.activeTab, innerW, theme)
 	}
 
 	headerLines := strings.Count(header, "\n")
