@@ -56,11 +56,11 @@ func formWidth(modelWidth int, theme UITheme) int {
 }
 
 // footerBg is the background colour for minimal/default themes.
-// comfortableBg is a near-black used in comfortable mode so the 3-row footer
-// strip blends with the terminal background instead of reading as a lighter band.
+// comfortableBg is a slightly darker gray for the comfortable 3-row footer strip,
+// providing a subtle visual separation from the content area without stark contrast.
 const (
 	footerBg      = lipgloss.Color("235")
-	comfortableBg = lipgloss.Color("232")
+	comfortableBg = lipgloss.Color("234")
 )
 
 // themeBg returns the correct footer background for the given theme.
