@@ -14,13 +14,15 @@ type Config struct {
 	AvailableFilter     github.Filters `json:"available_filter"`
 	AutoRefreshEnabled  bool           `json:"auto_refresh_enabled"`
 	AutoRefreshInterval int            `json:"auto_refresh_interval"` // in seconds
+	UITheme             string         `json:"ui_theme"`              // "minimal" | "default" | "comfortable"
 }
 
 func defaultConfig() Config {
 	return Config{
 		AvailableFilter:     github.Filters{State: "open", Limit: 25},
 		AutoRefreshEnabled:  false,
-		AutoRefreshInterval: 60, // 60 seconds default
+		AutoRefreshInterval: 60,
+		UITheme:             "default",
 	}
 }
 

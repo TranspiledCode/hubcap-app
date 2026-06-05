@@ -268,6 +268,9 @@ type PRsModel struct {
 	activeForm *huh.Form
 	formVals   *prFormVals
 
+	// uiTheme mirrors Config.UITheme and controls form width + footer density.
+	uiTheme UITheme
+
 }
 
 func newPRsModel(filters github.PRFilters) PRsModel {
@@ -564,7 +567,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 							huh.NewOption("Merge commit", "merge"),
 						).
 						Value(&m.formVals.mergeType),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
+				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			}
 			// Viewport scrolling
@@ -600,7 +603,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					huh.NewConfirm().
 						Title("Draft PR?").
 						Value(&m.formVals.newDraft),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(m.width - 8)
+				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true

@@ -14,6 +14,7 @@ import (
 type ConfigVals struct {
 	AutoRefreshEnabled  bool
 	AutoRefreshInterval string
+	UITheme             string
 	ActionChoice        string
 }
 
@@ -21,6 +22,10 @@ type ConfigVals struct {
 func InitConfigVals(vals *ConfigVals, cfg Config) {
 	vals.AutoRefreshEnabled = cfg.AutoRefreshEnabled
 	vals.AutoRefreshInterval = fmt.Sprintf("%d", cfg.AutoRefreshInterval)
+	vals.UITheme = cfg.UITheme
+	if vals.UITheme == "" {
+		vals.UITheme = "default"
+	}
 	vals.ActionChoice = "save"
 }
 
@@ -43,6 +48,15 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 				return ""
 			}, &vals.AutoRefreshEnabled),
 		huh.NewSelect[string]().
+			Title("UI theme").
+			Description("Controls footer button size and form padding.").
+			Options(
+				huh.NewOption("Minimal  — single-row compact buttons", "minimal"),
+				huh.NewOption("Default  — rounded bordered buttons", "default"),
+				huh.NewOption("Comfortable — wider buttons & forms", "comfortable"),
+			).
+			Value(&vals.UITheme),
+		huh.NewSelect[string]().
 			Title("Action").
 			Options(
 				huh.NewOption("Save settings", "save"),
@@ -55,11 +69,7 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 // ResolveConfig reads the completed vals and returns an updated Config.
 func ResolveConfig(vals *ConfigVals, current Config) Config {
 	if vals.ActionChoice == "reset" {
-		return Config{
-			AvailableFilter:     current.AvailableFilter,
-			AutoRefreshEnabled:  false,
-			AutoRefreshInterval: 60,
-		}
+		return defaultConfig()
 	}
 	cfg := current
 	cfg.AutoRefreshEnabled = vals.AutoRefreshEnabled
@@ -68,5 +78,6 @@ func ResolveConfig(vals *ConfigVals, current Config) Config {
 			cfg.AutoRefreshInterval = interval
 		}
 	}
+	cfg.UITheme = vals.UITheme
 	return cfg
 }
