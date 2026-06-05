@@ -735,72 +735,109 @@ func footerView(m AppModel, width int, theme UITheme) string {
 // It uses the same border style as other overlays and derives key names
 // directly from the central keys registry so descriptions never drift.
 func helpOverlayView(m AppModel, innerW int) string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	titleStyle  := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	keyStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	descStyle   := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	dimStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
-	row := func(b key.Binding) string {
-		h := b.Help()
-		return keyStyle.Render("["+h.Key+"]") + " " + descStyle.Render(h.Desc)
+	// keyColW is the visual column width reserved for the key badge so all
+	// descriptions start at the same horizontal position. Wide enough for
+	// the longest badge: "[shift+tab]" = 11 chars.
+	const keyColW = 16
+
+	// line renders one shortcut row. Pass desc="" to use the binding's own
+	// help description.
+	line := func(b key.Binding, desc string) string {
+		if desc == "" {
+			desc = b.Help().Desc
+		}
+		badge := keyStyle.Render("[" + b.Help().Key + "]")
+		gap := keyColW - lipgloss.Width(badge)
+		if gap < 2 {
+			gap = 2
+		}
+		return "    " + badge + strings.Repeat(" ", gap) + descStyle.Render(desc)
 	}
 
-	col := func(left, right string) string {
-		pad := innerW/2 - 4
-		if pad < 20 {
-			pad = 20
-		}
-		leftW := lipgloss.Width(left)
-		spaces := pad - leftW
-		if spaces < 1 {
-			spaces = 1
-		}
-		return left + strings.Repeat(" ", spaces) + right
+	sec := func(title string) string {
+		return "\n  " + sectionStyle.Render(title) + "\n"
 	}
 
-	var b strings.Builder
-	b.WriteString("\n  " + titleStyle.Render("KEYBOARD SHORTCUTS") + "\n")
-	b.WriteString("  " + dimStyle.Render(strings.Repeat("─", innerW-6)) + "\n\n")
+	var buf strings.Builder
+	buf.WriteString("\n  " + titleStyle.Render("KEYBOARD SHORTCUTS") + "\n")
+	buf.WriteString("  " + dimStyle.Render(strings.Repeat("─", innerW-6)) + "\n")
 
-	// ── Navigation (always shown) ─────────────────────────────────────────
-	b.WriteString("  " + sectionStyle.Render("Navigation") + "\n")
-	b.WriteString("  " + col(row(keys.Up), row(keys.Down)) + "\n")
-	b.WriteString("  " + col(row(keys.Top), row(keys.Bottom)) + "\n")
-	b.WriteString("  " + col(row(keys.Open), row(keys.Refresh)) + "\n")
-	b.WriteString("  " + col(row(keys.Tab), row(keys.ShiftTab)) + "\n")
-	b.WriteString("  " + col(row(keys.Config), row(keys.Quit)) + "\n")
+	// ── General (always shown) ────────────────────────────────────────────
+	buf.WriteString(sec("General"))
+	buf.WriteString(line(keys.Tab,      "switch to next tab") + "\n")
+	buf.WriteString(line(keys.ShiftTab, "switch to previous tab") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Config,  "open settings") + "\n")
+	buf.WriteString(line(keys.Refresh, "") + "\n")
+	buf.WriteString("\n")
+	buf.WriteString(line(keys.Help, "close this screen") + "\n")
+	buf.WriteString(line(keys.Quit, "") + "\n")
 
 	inDetail := inDetailMode(m)
 
 	if !inDetail {
-		// List-level extras
-		b.WriteString("\n  " + sectionStyle.Render("List") + "\n")
-		b.WriteString("  " + col(row(keys.New), row(keys.Filters)) + "\n")
+		// ── Browse (list view) ────────────────────────────────────────────
+		buf.WriteString(sec("Browse"))
+		buf.WriteString(line(keys.Up,     "navigate up / down") + "\n")
+		buf.WriteString(line(keys.Top,    "jump to top") + "\n")
+		buf.WriteString(line(keys.Bottom, "jump to bottom") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Open,    "open") + "\n")
+		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Filters, "") + "\n")
+		switch m.activeTab {
+		case TabIssues:
+			buf.WriteString(line(keys.New,         "new issue") + "\n")
+			buf.WriteString(line(keys.IssueAssign, "grab / take / drop") + "\n")
+		case TabPRs:
+			buf.WriteString(line(keys.New, "new PR") + "\n")
+		}
 	}
 
 	if m.activeTab == TabIssues && inDetail {
-		b.WriteString("\n  " + sectionStyle.Render("Issue detail") + "\n")
-		b.WriteString("  " + col(row(keys.IssueDevelop), row(keys.IssuePR)) + "\n")
-		b.WriteString("  " + col(row(keys.IssueClose), row(keys.IssueAssign)) + "\n")
-		b.WriteString("  " + col(row(keys.IssueLabel), row(keys.Browser)) + "\n")
-		b.WriteString("  " + col(row(keys.CopyURL), row(keys.Back)) + "\n")
+		// ── Issue detail ──────────────────────────────────────────────────
+		buf.WriteString(sec("Issue"))
+		buf.WriteString(line(keys.IssueDevelop, "create branch") + "\n")
+		buf.WriteString(line(keys.IssuePR,      "create pull request") + "\n")
+		buf.WriteString(line(keys.IssueClose,   "close / reopen") + "\n")
+		buf.WriteString(line(keys.IssueAssign,  "assign / unassign @me") + "\n")
+		buf.WriteString(line(keys.IssueLabel,   "add label") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+		buf.WriteString(line(keys.CopyURL, "copy URL") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Refresh, "") + "\n")
+		buf.WriteString(line(keys.Back,    "back to list") + "\n")
 	}
 
 	if m.activeTab == TabPRs && inDetail {
-		b.WriteString("\n  " + sectionStyle.Render("PR detail") + "\n")
-		b.WriteString("  " + col(row(keys.PRCheckout), row(keys.PRMerge)) + "\n")
-		b.WriteString("  " + col(row(keys.PRClose), row(keys.Browser)) + "\n")
-		b.WriteString("  " + col(row(keys.CopyURL), row(keys.Back)) + "\n")
+		// ── PR detail ─────────────────────────────────────────────────────
+		buf.WriteString(sec("Pull Request"))
+		buf.WriteString(line(keys.PRCheckout, "checkout branch") + "\n")
+		buf.WriteString(line(keys.PRMerge,    "merge") + "\n")
+		buf.WriteString(line(keys.PRClose,    "close / reopen") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Browser, "open in browser") + "\n")
+		buf.WriteString(line(keys.CopyURL, "copy URL") + "\n")
+		buf.WriteString("\n")
+		buf.WriteString(line(keys.Refresh, "") + "\n")
+		buf.WriteString(line(keys.Back,    "back to list") + "\n")
 	}
 
-	b.WriteString("\n  " + dimStyle.Render("Press any key to close") + "\n")
+	buf.WriteString("\n  " + dimStyle.Render("Press any key to close") + "\n")
 
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("208")).
 		Width(innerW)
-	return appBorder.Render(b.String())
+	return appBorder.Render(buf.String())
 }
 
 func (m AppModel) View() string {
