@@ -124,6 +124,15 @@ func FetchRepo() string {
 	return repo.NameWithOwner
 }
 
+// GetCurrentUser returns the GitHub login of the authenticated user.
+func GetCurrentUser() (string, error) {
+	out, err := RunCommand("gh", "api", "user", "--jq", ".login")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func RunCommand(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 
