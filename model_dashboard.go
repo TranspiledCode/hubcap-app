@@ -8,6 +8,7 @@ import (
 
 	"hubcap/internal/github"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -48,7 +49,6 @@ type DashboardModel struct {
 	rows    []dashRow
 	width   int
 	height  int
-	action  string
 }
 
 func newDashboardModel(cfg Config) DashboardModel {
@@ -160,23 +160,21 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 		if m.loading {
 			break
 		}
-		switch msg.String() {
-		case "q":
-			m.action = "quit"
-			return m, nil
-		case "tab":
-			m.action = "switch"
-			return m, nil
-		case "r":
+		switch {
+		case key.Matches(msg, keys.Refresh):
 			m.loading = true
 			m.loaded = false
 			cmds = append(cmds, m.fetchCmd())
 			cmds = append(cmds, m.spinner.Tick)
-		case "up", "k":
+		case key.Matches(msg, keys.Up):
 			m.moveCursor(-1)
-		case "down", "j":
+		case key.Matches(msg, keys.Down):
 			m.moveCursor(1)
-		case "enter", " ":
+		case key.Matches(msg, keys.Top):
+			m.moveCursorTop()
+		case key.Matches(msg, keys.Bottom):
+			m.moveCursorBottom()
+		case key.Matches(msg, keys.Open) || msg.String() == " ":
 			if len(m.rows) == 0 || m.cursor >= len(m.rows) {
 				break
 			}
@@ -213,6 +211,24 @@ func (m *DashboardModel) moveCursor(delta int) {
 	}
 	if next >= 0 && next < items {
 		m.cursor = next
+	}
+}
+
+func (m *DashboardModel) moveCursorTop() {
+	for i, row := range m.rows {
+		if !row.isHeader {
+			m.cursor = i
+			return
+		}
+	}
+}
+
+func (m *DashboardModel) moveCursorBottom() {
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		if !m.rows[i].isHeader {
+			m.cursor = i
+			return
+		}
 	}
 }
 

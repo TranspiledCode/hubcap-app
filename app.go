@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -127,6 +128,9 @@ type AppModel struct {
 	// prompt is showing. Only y/Y proceeds to tea.Quit; anything else dismisses.
 	confirmingQuit bool
 
+	// showHelp is true while the ? help overlay is visible.
+	showHelp bool
+
 	// Auto-refresh state (global across all tabs)
 	lastRefreshTime int64 // Unix timestamp of last refresh
 	timerTick       int   // Counter to force view updates every second
@@ -173,14 +177,17 @@ func inDetailMode(m AppModel) bool {
 }
 
 // hasActiveForm returns true when any sub-model or the app-level filter form
-// has an active huh form. Used to suppress global key shortcuts that would
-// conflict with form navigation (tab to switch tabs vs. tab to next field).
+// has an active huh form, or when the list's inline filter input is open.
+// Used to suppress global key shortcuts that would conflict with form navigation
+// (e.g. tab to switch tabs vs. tab to next field, q to quit vs. q while typing).
 func (m AppModel) hasActiveForm() bool {
 	return m.filterForm != nil ||
 		m.filterLoading ||
 		m.configForm != nil ||
 		m.issues.activeForm != nil ||
-		m.prs.activeForm != nil
+		m.prs.activeForm != nil ||
+		(m.activeTab == TabIssues && m.issues.IsFiltering()) ||
+		(m.activeTab == TabPRs && m.prs.IsFiltering())
 }
 
 // fetchFilterDataCmd fetches assignees and labels in the background so the
@@ -221,12 +228,25 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Snapshot detail state before processing — used to detect header changes.
 	wasInDetail := inDetailMode(m)
 
+	// ── Help overlay — dismiss on any key ────────────────────────────────────
+	if m.showHelp {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			m.showHelp = false
+			return m, nil
+		}
+		if wm, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wm.Width
+			m.height = wm.Height
+		}
+		return m, nil
+	}
+
 	// ── Quit confirmation takes highest priority ──────────────────────────────
 	// While the prompt is showing, only y/Y quits; anything else dismisses it.
 	// Non-key messages (resize, spinner ticks) still flow through normally.
 	if m.confirmingQuit {
-		if key, ok := msg.(tea.KeyMsg); ok {
-			switch key.String() {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
 			case "y", "Y":
 				return m, tea.Quit
 			default:
@@ -378,33 +398,29 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case key.Matches(msg, keys.ForceQuit):
 			return m, tea.Quit
-		case "tab":
+		case key.Matches(msg, keys.Help) && !m.hasActiveForm():
+			m.showHelp = !m.showHelp
+			return m, nil
+		case key.Matches(msg, keys.Quit) && !m.hasActiveForm():
+			m.confirmingQuit = true
+			return m, nil
+		case key.Matches(msg, keys.Tab) && !m.hasActiveForm():
 			// Don't switch tabs when a sub-model form is open — let the form
 			// use tab for field navigation.
-			if !m.hasActiveForm() {
-				next := nextTab(m.activeTab)
-				return m, func() tea.Msg { return switchTabMsg{tab: next} }
-			}
-		case "shift+tab":
-			if !m.hasActiveForm() {
-				prev := (m.activeTab + 2) % 3
-				return m, func() tea.Msg { return switchTabMsg{tab: prev} }
-			}
-		case ",":
-			if m.hasActiveForm() {
-				break
-			}
+			next := nextTab(m.activeTab)
+			return m, func() tea.Msg { return switchTabMsg{tab: next} }
+		case key.Matches(msg, keys.ShiftTab) && !m.hasActiveForm():
+			prev := (m.activeTab + 2) % 3
+			return m, func() tea.Msg { return switchTabMsg{tab: TabID(prev)} }
+		case key.Matches(msg, keys.Config) && !m.hasActiveForm():
 			// Open configuration form
 			InitConfigVals(m.configVals, m.cfg)
 			m.configForm = BuildConfigForm(m.configVals).WithWidth(m.width - 8)
 			return m, m.configForm.Init()
-		case "f":
-			if m.hasActiveForm() {
-				break
-			}
+		case key.Matches(msg, keys.Filters) && !m.hasActiveForm():
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
 				m.filterLoading = true
 				m.filterForPRs = false
@@ -474,16 +490,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		if m.issues.action == "switch" {
-			m.issues.action = ""
-			next := nextTab(m.activeTab)
-			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
-		}
-		if m.issues.action == "quit" {
-			m.issues.action = ""
-			m.confirmingQuit = true
-			return m, nil
-		}
 
 	case TabPRs:
 		updated, cmd := m.prs.Update(msg)
@@ -491,32 +497,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		if m.prs.action == "switch" {
-			m.prs.action = ""
-			next := nextTab(m.activeTab)
-			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
-		}
-		if m.prs.action == "quit" {
-			m.prs.action = ""
-			m.confirmingQuit = true
-			return m, nil
-		}
 
 	case TabDashboard:
 		updated, cmd := m.dashboard.Update(msg)
 		m.dashboard = updated
 		if cmd != nil {
 			cmds = append(cmds, cmd)
-		}
-		if m.dashboard.action == "switch" {
-			m.dashboard.action = ""
-			next := nextTab(m.activeTab)
-			cmds = append(cmds, func() tea.Msg { return switchTabMsg{tab: next} })
-		}
-		if m.dashboard.action == "quit" {
-			m.dashboard.action = ""
-			m.confirmingQuit = true
-			return m, nil
 		}
 	}
 
@@ -630,33 +616,40 @@ func detailActionFooter(m AppModel, width int) string {
 		hints = append(hints, keyStyle.Render("["+key+"]")+" "+descStyle.Render(desc))
 	}
 
+	// hk derives the display key string from the central registry.
+	hk := func(b key.Binding) string { return b.Help().Key }
+
 	switch {
 	case m.activeTab == TabIssues && m.issues.showDetail:
 		closeLabel := "close"
 		if strings.EqualFold(m.issues.detailIssue.State, "closed") {
 			closeLabel = "reopen"
 		}
-		addHint("d", "develop")
-		addHint("p", "PR")
-		addHint("c", closeLabel)
-		addHint("a", "assign")
-		addHint("l", "label")
-		addHint("o", "browser")
-		addHint("u", "copy URL")
-		addHint("r", "refresh")
-		addHint("b", "back")
+		assignLabel := "assign"
+		if len(m.issues.detailIssue.Assignees) > 0 {
+			assignLabel = "unassign"
+		}
+		addHint(hk(keys.IssueDevelop), "develop")
+		addHint(hk(keys.IssuePR), "PR")
+		addHint(hk(keys.IssueClose), closeLabel)
+		addHint(hk(keys.IssueAssign), assignLabel)
+		addHint(hk(keys.IssueLabel), "label")
+		addHint(hk(keys.Browser), "browser")
+		addHint(hk(keys.CopyURL), "copy URL")
+		addHint(hk(keys.Refresh), "refresh")
+		addHint(hk(keys.Back), "back")
 	case m.activeTab == TabPRs && m.prs.showDetail:
 		closeLabel := "close"
 		if strings.EqualFold(m.prs.detailPR.State, "closed") {
 			closeLabel = "reopen"
 		}
-		addHint("c", "checkout")
-		addHint("m", "merge")
-		addHint("x", closeLabel)
-		addHint("o", "browser")
-		addHint("u", "copy URL")
-		addHint("r", "refresh")
-		addHint("b", "back")
+		addHint(hk(keys.PRCheckout), "checkout")
+		addHint(hk(keys.PRMerge), "merge")
+		addHint(hk(keys.PRClose), closeLabel)
+		addHint(hk(keys.Browser), "browser")
+		addHint(hk(keys.CopyURL), "copy URL")
+		addHint(hk(keys.Refresh), "refresh")
+		addHint(hk(keys.Back), "back")
 	}
 
 	line := footerBg.Render("  ") + strings.Join(hints, sep)
@@ -681,20 +674,24 @@ func footerView(activeTab TabID, width int) string {
 		hints = append(hints, keyStyle.Render("["+key+"]")+" "+descStyle.Render(desc))
 	}
 
-	addHint("↑↓", "move")
-	addHint("enter", "open")
-	addHint("tab", "switch")
+	// hk derives the display key string from the central registry.
+	hk := func(b key.Binding) string { return b.Help().Key }
+
+	addHint(hk(keys.Up), "move")
+	addHint(hk(keys.Open), "open")
+	addHint(hk(keys.Tab), "switch")
 	switch activeTab {
 	case TabIssues:
-		addHint("n", "new issue")
-		addHint("f", "filters")
+		addHint(hk(keys.New), "new issue")
+		addHint(hk(keys.Filters), "filters")
 	case TabPRs:
-		addHint("n", "new PR")
-		addHint("f", "filters")
+		addHint(hk(keys.New), "new PR")
+		addHint(hk(keys.Filters), "filters")
 	}
-	addHint(",", "config")
-	addHint("r", "refresh")
-	addHint("q", "quit")
+	addHint(hk(keys.Config), "config")
+	addHint(hk(keys.Refresh), "refresh")
+	addHint(hk(keys.Help), "help")
+	addHint(hk(keys.Quit), "quit")
 
 	line := footerBg.Render("  ") + strings.Join(hints, sep)
 	lineW := lipgloss.Width(line)
@@ -707,6 +704,78 @@ func footerView(activeTab TabID, width int) string {
 	return line
 }
 
+// helpOverlayView renders a context-sensitive shortcut reference.
+// It uses the same border style as other overlays and derives key names
+// directly from the central keys registry so descriptions never drift.
+func helpOverlayView(m AppModel, innerW int) string {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
+	row := func(b key.Binding) string {
+		h := b.Help()
+		return keyStyle.Render("["+h.Key+"]") + " " + descStyle.Render(h.Desc)
+	}
+
+	col := func(left, right string) string {
+		pad := innerW/2 - 4
+		if pad < 20 {
+			pad = 20
+		}
+		leftW := lipgloss.Width(left)
+		spaces := pad - leftW
+		if spaces < 1 {
+			spaces = 1
+		}
+		return left + strings.Repeat(" ", spaces) + right
+	}
+
+	var b strings.Builder
+	b.WriteString("\n  " + titleStyle.Render("KEYBOARD SHORTCUTS") + "\n")
+	b.WriteString("  " + dimStyle.Render(strings.Repeat("─", innerW-6)) + "\n\n")
+
+	// ── Navigation (always shown) ─────────────────────────────────────────
+	b.WriteString("  " + sectionStyle.Render("Navigation") + "\n")
+	b.WriteString("  " + col(row(keys.Up), row(keys.Down)) + "\n")
+	b.WriteString("  " + col(row(keys.Top), row(keys.Bottom)) + "\n")
+	b.WriteString("  " + col(row(keys.Open), row(keys.Refresh)) + "\n")
+	b.WriteString("  " + col(row(keys.Tab), row(keys.ShiftTab)) + "\n")
+	b.WriteString("  " + col(row(keys.Config), row(keys.Quit)) + "\n")
+
+	inDetail := inDetailMode(m)
+
+	if !inDetail {
+		// List-level extras
+		b.WriteString("\n  " + sectionStyle.Render("List") + "\n")
+		b.WriteString("  " + col(row(keys.New), row(keys.Filters)) + "\n")
+	}
+
+	if m.activeTab == TabIssues && inDetail {
+		b.WriteString("\n  " + sectionStyle.Render("Issue detail") + "\n")
+		b.WriteString("  " + col(row(keys.IssueDevelop), row(keys.IssuePR)) + "\n")
+		b.WriteString("  " + col(row(keys.IssueClose), row(keys.IssueAssign)) + "\n")
+		b.WriteString("  " + col(row(keys.IssueLabel), row(keys.Browser)) + "\n")
+		b.WriteString("  " + col(row(keys.CopyURL), row(keys.Back)) + "\n")
+	}
+
+	if m.activeTab == TabPRs && inDetail {
+		b.WriteString("\n  " + sectionStyle.Render("PR detail") + "\n")
+		b.WriteString("  " + col(row(keys.PRCheckout), row(keys.PRMerge)) + "\n")
+		b.WriteString("  " + col(row(keys.PRClose), row(keys.Browser)) + "\n")
+		b.WriteString("  " + col(row(keys.CopyURL), row(keys.Back)) + "\n")
+	}
+
+	b.WriteString("\n  " + dimStyle.Render("Press any key to close") + "\n")
+
+	appBorder := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("208")).
+		Width(innerW)
+	return appBorder.Render(b.String())
+}
+
 func (m AppModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -714,6 +783,11 @@ func (m AppModel) View() string {
 
 	innerW := m.width - 2
 	innerH := m.height - 2
+
+	// ── Help overlay ──────────────────────────────────────────────────────────
+	if m.showHelp {
+		return helpOverlayView(m, innerW)
+	}
 
 	// ── Config form overlay ───────────────────────────────────────────────────
 	// Show the configuration form when active.
