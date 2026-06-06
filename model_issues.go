@@ -207,7 +207,8 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	labelMax := contentW - assigneeMax - sepW
 
-	indent := base.Render(strings.Repeat(" ", lineIndent))
+	// Reuse accent on line 2 so the bar spans both rows; fill the rest of the indent.
+	indent := accent + base.Render(strings.Repeat(" ", lineIndent-2))
 
 	assigneeStyle := base.Foreground(lipgloss.Color("244"))
 	var assigneeText string
