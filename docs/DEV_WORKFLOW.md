@@ -149,9 +149,11 @@ git push origin 123-add-login-form
 gh pr create --fill
 
 # Ready to release? (on dev branch)
-# Create version tag manually
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push --follow-tags origin dev  # Push release commit + tags
+# 1. Bump VERSION file, commit, push
+echo "X.Y.Z" > VERSION && git add VERSION && git commit -m "chore: bump version to vX.Y.Z" && git push origin dev
+# 2. Tag and push — GoReleaser handles builds, GitHub Release, and Homebrew formula automatically
+git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z
+# 3. PR dev → main as usual
 gh pr create --base main --head dev --fill
 ```
 
@@ -995,7 +997,7 @@ log.Printf("[Component] %s", message)
 
 | Command                                 | Description              | When to Use                    |
 | --------------------------------------- | ------------------------ | ------------------------------ |
-| `go build .`                            | Build binary             | Before distributing            |
+| `go build ./...`                        | Build binary             | Local verification only — GoReleaser handles distribution |
 | `go fmt ./...`                          | Format code              | **FIRST** before vetting       |
 | `go vet ./...`                          | Run static analysis      | **SECOND** after formatting    |
 | `go test ./...`                         | Run all tests            | Verify code works              |
@@ -1044,15 +1046,16 @@ gh pr create --fill
 
 ```bash
 git checkout dev && git pull origin dev
-# Review commits to determine version
+# Review commits to determine version bump (feat → minor, fix → patch)
 git log --oneline origin/main..origin/dev
-# Create version tag
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
+# Bump VERSION file
+echo "X.Y.Z" > VERSION && git add VERSION && git commit -m "chore: bump version to vX.Y.Z" && git push origin dev
+# Tag and push — triggers GoReleaser: cross-compile, GitHub Release, Homebrew formula
+git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z
+# PR dev → main, then sync after merge
 gh pr create --base main --head dev --fill
 # After merge:
-git checkout dev && git pull origin dev && git merge origin/main && git push origin dev
-git checkout main && git pull origin main && git checkout dev
+git checkout dev && git merge origin/main && git push origin dev
 ```
 
 **Create all labels at once:**
@@ -2094,9 +2097,9 @@ This section should be customized for each project. Include:
 - [ ] Push branch
 - [ ] Create PR
 - [ ] Wait for merge
-- [ ] Create release tag (on dev)
-- [ ] Push with tags
-- [ ] Create PR to main
+- [ ] Bump `VERSION` file, commit, push to dev
+- [ ] Create and push release tag (triggers GoReleaser automatically)
+- [ ] Create PR dev → main, merge, sync dev with main
 
 **Never skip steps. Never commit without user testing and approval. This process works flawlessly.**
 
@@ -2116,7 +2119,7 @@ This section should be customized for each project. Include:
 1. Check the error in terminal
 2. Verify imports are correct
 3. Check for typos in variable names
-4. Run `go build .` to test
+4. Run `go build ./...` to test
 
 ### If Tests Fail
 
