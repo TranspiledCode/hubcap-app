@@ -230,7 +230,17 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	if labelBudget < 0 {
 		labelBudget = 0
 	}
-	labelStr := issueRowLabels(pr.Labels, bgKey, labelBudget)
+	const maxLabels = 3
+	shownLabels := pr.Labels
+	labelOverflow := 0
+	if len(pr.Labels) > maxLabels {
+		shownLabels = pr.Labels[:maxLabels]
+		labelOverflow = len(pr.Labels) - maxLabels
+	}
+	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget)
+	if labelOverflow > 0 {
+		labelStr += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", labelOverflow))
+	}
 
 	// Reuse accent on line 2 so the bar spans both rows.
 	indent2 := accent + base.Render(strings.Repeat(" ", lineIndent-2))
