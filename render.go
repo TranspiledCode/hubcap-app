@@ -261,23 +261,34 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	b.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("236")).Render(strings.Repeat("▄", width)) + "\n")
 
 	// ── Line 2: tabs ──────────────────────────────────────────────────────
+	// Build badge strings: dim (N) shown next to each tab label.
+	badgeSt := lipgloss.NewStyle().Background(tabBg).Foreground(lipgloss.Color("244"))
+	badge := func(n int) string {
+		if n == 0 {
+			return ""
+		}
+		return badgeSt.Render(fmt.Sprintf(" (%d)", n))
+	}
+	dashTotal := counts.ReviewRequests + counts.MyPRs + counts.Assigned
+
 	type tabDef struct {
 		label string
+		badge string
 		id    TabID
 	}
 	tabs := []tabDef{
-		{"1: Dashboard", TabDashboard},
-		{"2: Issues", TabIssues},
-		{"3: Pull Requests", TabPRs},
+		{"1: Dashboard", badge(dashTotal), TabDashboard},
+		{"2: Issues", badge(counts.IssueListCount), TabIssues},
+		{"3: Pull Requests", badge(counts.PRListCount), TabPRs},
 	}
 	var tabRow strings.Builder
 	tabsWidth := 0
 	for _, t := range tabs {
 		var rendered string
 		if t.id == activeTab {
-			rendered = tabActiveStyle.Render(t.label)
+			rendered = tabActiveStyle.Render(t.label) + t.badge
 		} else {
-			rendered = tabInactiveStyle.Render(t.label)
+			rendered = tabInactiveStyle.Render(t.label) + t.badge
 		}
 		tabRow.WriteString(rendered)
 		tabsWidth += lipgloss.Width(rendered)

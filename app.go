@@ -907,7 +907,10 @@ func (m AppModel) View() string {
 	}
 
 	inDetail := inDetailMode(m)
-	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix())
+	navCounts := m.dashboard.Counts()
+	navCounts.IssueListCount = len(m.issues.list.Items())
+	navCounts.PRListCount = len(m.prs.list.Items())
+	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, navCounts, innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix())
 
 	var body string
 	switch m.activeTab {
