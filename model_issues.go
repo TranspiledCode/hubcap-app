@@ -179,10 +179,23 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Line 1: accent + dot + number + title + fill + timestamp
 	line1 := accent + dot + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
 
-	// Line 2: indented to align with the title, showing assignee + labels.
+	// Line 2: assignee · labels … [fill] … type
 	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	lineIndent := 10
-	contentW := width - lineIndent - 1
+
+	// Build the type badge first so we know its width before sizing labels.
+	var typeStr string
+	if issue.IssueType != "" {
+		typeStr = base.Foreground(lipgloss.Color("111")).Render(issue.IssueType)
+	} else {
+		typeStr = base.Foreground(lipgloss.Color("238")).Render("—")
+	}
+	typeW := lipgloss.Width(typeStr)
+
+	// contentW is available for assignee + sep + labels, leaving room for
+	// a minimum 2-char gap before the type and 1 trailing space.
+	const typeGap = 2
+	contentW := width - lineIndent - typeGap - typeW - 1
 	if contentW < 20 {
 		contentW = 20
 	}
@@ -225,12 +238,23 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		}
 	}
 
+	// Fill to push type to the right edge.
+	line2LeftW := lineIndent + lipgloss.Width(assigneeStr)
+	if labelPart != "" {
+		line2LeftW += sepW + lipgloss.Width(labelPart)
+	}
+	line2FillW := width - line2LeftW - typeW - 1
+	if line2FillW < typeGap {
+		line2FillW = typeGap
+	}
+	line2Fill := base.Render(strings.Repeat(" ", line2FillW))
+
 	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
 	line2 := indent + assigneeStr
 	if labelPart != "" {
 		line2 += dimSep + labelPart
 	}
-	line2 += base.Render(" ")
+	line2 += line2Fill + typeStr + base.Render(" ")
 	fmt.Fprintf(w, "%s\n%s", line1, line2)
 }
 
