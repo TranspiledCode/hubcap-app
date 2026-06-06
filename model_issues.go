@@ -821,7 +821,7 @@ func (m IssuesModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded))
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded, m.detail.AtBottom(), m.detail.ScrollPercent()))
 		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}

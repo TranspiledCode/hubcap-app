@@ -342,40 +342,32 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	return b.String()
 }
 
-// metaSepLine renders the full-width separator line shared by all meta strips.
-func metaSepLine(width int) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("237")).Render(strings.Repeat("─", width))
-}
-
-// viewportWithScrollHint overlays a light-grey "↓ N%" badge at the
-// bottom-right corner of the viewport when there is more content to scroll.
-// The badge sits on top of the last visible line so no height change occurs.
-func viewportWithScrollHint(vp viewport.Model) string {
-	view := vp.View()
-	if vp.AtBottom() {
-		return view
+// metaSepLine renders the separator line shared by all meta strips.
+// When atBottom is false a light-grey "↓ N%" badge is right-aligned at the
+// end of the rule. No height change — always exactly one line.
+func metaSepLine(width int, atBottom bool, scrollPct float64) string {
+	dashSt := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	if atBottom {
+		return dashSt.Render(strings.Repeat("─", width))
 	}
-	pct := int(vp.ScrollPercent() * 100)
+	pct := int(scrollPct * 100)
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color("240")).
 		Foreground(lipgloss.Color("252")).
 		Padding(0, 1).
 		Render(fmt.Sprintf("↓ %d%%", pct))
 	badgeW := lipgloss.Width(badge)
+	dashW := width - badgeW
+	if dashW < 0 {
+		dashW = 0
+	}
+	return dashSt.Render(strings.Repeat("─", dashW)) + badge
+}
 
-	lines := strings.Split(view, "\n")
-	// Find the last non-empty line to overlay onto.
-	idx := len(lines) - 1
-	for idx > 0 && strings.TrimSpace(lines[idx]) == "" {
-		idx--
-	}
-	lineW := lipgloss.Width(lines[idx])
-	padW := vp.Width - lineW - badgeW
-	if padW < 0 {
-		padW = 0
-	}
-	lines[idx] = lines[idx] + strings.Repeat(" ", padW) + badge
-	return strings.Join(lines, "\n")
+// viewportWithScrollHint returns the plain viewport view. The scroll hint is
+// shown in the meta strip separator so no overlay on content is needed.
+func viewportWithScrollHint(vp viewport.Model) string {
+	return vp.View()
 }
 
 // renderIssueMetaStrip renders the fixed 5-line metadata strip shown above the
@@ -393,7 +385,7 @@ func viewportWithScrollHint(vp viewport.Model) string {
 //	Line 5 — Author: …  ·  Created: …  (left)   remaining pills (right)
 //	Line 6 — blank gap
 //	Line 7 — separator
-func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
+func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, atBottom bool, scrollPct float64) string {
 	if width == 0 {
 		width = 80
 	}
@@ -491,7 +483,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	row2 := assigneeStr + typeStr + fill(width-leftW-pillsW) + pillsStr
 
 	// ── Separator (last line either way) ─────────────────────────────────────
-	sepLine := metaSepLine(width)
+	sepLine := metaSepLine(width, atBottom, scrollPct)
 
 	if !expanded {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
@@ -540,7 +532,7 @@ func prStatusPill(stripBg lipgloss.Color, bg lipgloss.Color, fg lipgloss.Color, 
 //	Line 3 — blank gap
 //	Line 4 — ⎇ head → base · by author (left)  ···  status + label pills (right)
 //	Line 5 — separator
-func renderPRMetaStrip(pr github.PullRequest, width int) string {
+func renderPRMetaStrip(pr github.PullRequest, width int, atBottom bool, scrollPct float64) string {
 	if width == 0 {
 		width = 80
 	}
@@ -656,7 +648,7 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	row2 := leftStr + fill(width-leftW-rightW) + rightStr
 
 	// ── Line 5: separator ────────────────────────────────────────────────────
-	sepLine := metaSepLine(width)
+	sepLine := metaSepLine(width, atBottom, scrollPct)
 
 	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + sepLine + "\n"
 }

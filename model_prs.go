@@ -665,7 +665,7 @@ func (m PRsModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4))
+		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4, m.detail.AtBottom(), m.detail.ScrollPercent()))
 		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
