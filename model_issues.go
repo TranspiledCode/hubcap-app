@@ -218,8 +218,8 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	assigneeStr := assigneeStyle.Render(truncate(assigneeText, assigneeMax))
 
-	// Labels: show up to 4 badges, then a dim "+N" overflow count.
-	const maxLabels = 4
+	// Labels: show up to 3 badges, then a dim "+N" overflow count.
+	const maxLabels = 3
 	var labelPart string
 	if len(issue.Labels) > 0 {
 		shown := issue.Labels

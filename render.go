@@ -407,13 +407,24 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 	}
 	typeStr := dimDot + mutedSt.Render("Type: ") + authorSt.Render(typeVal)
 
+	const maxPills = 3
 	var pillsStr string
 	if len(issue.Labels) > 0 {
-		pills := make([]string, len(issue.Labels))
-		for i, l := range issue.Labels {
+		shown := issue.Labels
+		overflow := 0
+		if len(issue.Labels) > maxPills {
+			shown = issue.Labels[:maxPills]
+			overflow = len(issue.Labels) - maxPills
+		}
+		pills := make([]string, len(shown))
+		for i, l := range shown {
 			pills[i] = labelPill(bg, l.Name)
 		}
-		pillsStr = strings.Join(pills, "") + s.Render("  ")
+		pillsStr = strings.Join(pills, "")
+		if overflow > 0 {
+			pillsStr += s.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+		}
+		pillsStr += s.Render("  ")
 	}
 
 	leftW := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr)
