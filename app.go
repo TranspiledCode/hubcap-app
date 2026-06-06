@@ -650,16 +650,11 @@ func detailActionFooter(m AppModel, width int) string {
 		if isMeAssigned(m.issues.detailIssue.Assignees, m.currentUser) {
 			assignLabel = "unassign"
 		}
-		expandLabel := "expand"
-		if m.issues.metaExpanded {
-			expandLabel = "collapse"
-		}
 		btns = []KeyButton{
 			kb(keys.Back, "back", ColorMeta),
 			kb(keys.IssueClose, closeLabel, ColorDanger),
 			kb(keys.IssueAssign, assignLabel, ColorAction),
 			kb(keys.IssueDevelop, "develop", ColorAction),
-			kb(keys.IssueExpandMeta, expandLabel, ColorMeta),
 			kb(keys.Browser, "browser", ColorMeta),
 			kb(keys.Help, "more actions", ColorMeta),
 		}

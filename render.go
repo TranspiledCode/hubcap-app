@@ -345,7 +345,34 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 
 // metaSepLine renders the full-width separator line shared by all meta strips.
 func metaSepLine(width int) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("237")).Render(strings.Repeat("─", width))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(strings.Repeat("─", width))
+}
+
+// issueSepLine renders the separator for the issue meta strip.
+// It embeds a centred [e] expand / [e] collapse shortcut hint so users can
+// discover the expand feature without it taking up a footer button slot.
+func issueSepLine(width int, expanded bool) string {
+	dashSt := lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+	bracketSt := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	keySt := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	labelSt := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+	action := "expand"
+	if expanded {
+		action = "collapse"
+	}
+	hint := bracketSt.Render("[") + keySt.Render("e") + bracketSt.Render("]") +
+		labelSt.Render(" "+action+" ")
+	hintW := lipgloss.Width(hint)
+	left := (width - hintW) / 2
+	right := width - hintW - left
+	if left < 0 {
+		left = 0
+	}
+	if right < 0 {
+		right = 0
+	}
+	return dashSt.Render(strings.Repeat("─", left)) + hint + dashSt.Render(strings.Repeat("─", right))
 }
 
 // viewportWithScrollHint overlays a light-grey "↓ N%" badge at the
@@ -492,8 +519,8 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	pillW := lipgloss.Width(collapsedPill)
 	row2 := assigneeStr + typeStr + fill(width-leftW-pillW) + collapsedPill
 
-	// ── Separator (last line either way) ─────────────────────────────────────
-	sepLine := metaSepLine(width)
+	// ── Separator — always shows [e] expand / [e] collapse hint centred ─────
+	sepLine := issueSepLine(width, expanded)
 
 	if !expanded {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
@@ -515,10 +542,10 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
 	row3 := authorStr + createdStr + fill(width-lipgloss.Width(authorStr)-lipgloss.Width(createdStr))
 
-	// Row 8: label pills flush-left (no extra indent — pill's own gutter aligns them)
+	// Row 8: label pills with single leading space
 	allPills := buildPills(issue.Labels)
 	allPillsW := lipgloss.Width(allPills)
-	row4 := allPills + fill(width-allPillsW)
+	row4 := " " + allPills + fill(width-1-allPillsW)
 
 	// spacer + title + thinGap + row2 + halfGap + row3 + halfGap + row4 + sep = 9 lines
 	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + halfGap + "\n" + row3 + "\n" + halfGap + "\n" + row4 + "\n" + sepLine + "\n"
