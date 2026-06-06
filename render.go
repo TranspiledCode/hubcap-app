@@ -1054,6 +1054,39 @@ func deriveBranchName(number int, title string) string {
 	return full
 }
 
+// timeAgo returns a short human-readable relative time string for an ISO 8601
+// timestamp (e.g. "2h ago", "3d ago", "2mo ago"). Returns "" on parse error.
+func timeAgo(ts string) string {
+	if ts == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		// Try without timezone suffix (some GitHub responses omit the Z)
+		t, err = time.Parse("2006-01-02T15:04:05", strings.TrimSuffix(ts, "Z"))
+		if err != nil {
+			return ""
+		}
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dw ago", int(d.Hours()/(24*7)))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(d.Hours()/(24*30)))
+	default:
+		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
+	}
+}
+
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)

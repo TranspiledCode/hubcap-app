@@ -141,43 +141,48 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⚑")
 
-	// Issue number (right-padded to 5 chars for alignment: "#5   ", "#123 ").
+	// Issue number — left-aligned in a 4-digit-wide field so columns stay
+	// stable as numbers grow: " #20  " → " #200 " → " #2000".
 	numStyle := base.Foreground(lipgloss.Color("69"))
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
 	numStr := numStyle.Render(fmt.Sprintf(" #%-4d", issue.Number))
 
-	// Title with proper space
+	// Timestamp — rendered first so we know the width before sizing the title.
+	var tsStr string
+	if age := timeAgo(issue.CreatedAt); age != "" {
+		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
+	}
+	tsW := lipgloss.Width(tsStr)
+
+	// Title fills the space between the left prefix and the timestamp.
+	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
+	// right suffix = gap(2) + tsW + trailing(1)
 	titleStyle := base.Foreground(lipgloss.Color("252"))
 	if selected {
 		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
 	}
-	// Calculate title width: total - accent(2) - dot(1) - numStr(6) - space(1) - rightPad(1)
-	titleMaxW := width - 2 - 1 - lipgloss.Width(numStr) - 1 - 1
+	titleMaxW := width - 10 - 2 - tsW - 1
 	if titleMaxW < 20 {
 		titleMaxW = 20
 	}
 	titleStr := titleStyle.Render(truncate(issue.Title, titleMaxW))
 
-	// Line 1: accent + dot + number + title
-	line1 := accent + dot + numStr + " " + titleStr + base.Render(" ")
+	// Fill so the timestamp sits flush at the right edge.
+	fillW := width - 10 - lipgloss.Width(titleStr) - tsW - 1
+	if fillW < 1 {
+		fillW = 1
+	}
+	fill := base.Render(strings.Repeat(" ", fillW))
 
-	// Line 2: indented to align with the title start on line 1.
-	// prefix = accent(2) + dot(1) + numStr + space(1)
-	lineIndent := 2 + 1 + lipgloss.Width(numStr) + 1
-	// contentW = available chars after indent and trailing pad
-	contentW := width - lineIndent - 1
-	if contentW < 20 {
-		contentW = 20
-	}
-	// separator between assignee and labels (matches issueRowLabels internal sep style)
-	const sepW = 5 // "  ·  "
-	assigneeMax := (contentW - sepW) * 30 / 100
-	if assigneeMax < 8 {
-		assigneeMax = 8
-	}
-	labelMax := contentW - assigneeMax - sepW
+	// Line 1: accent + dot + number + title + fill + timestamp
+	line1 := accent + dot + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
+
+	// Line 2: indented to align with the title, showing assignee + effort label.
+	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
+	lineIndent := 10
+	indent := base.Render(strings.Repeat(" ", lineIndent))
 
 	assigneeStyle := base.Foreground(lipgloss.Color("244"))
 	var assigneeText string
@@ -186,18 +191,29 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	} else {
 		assigneeText = "unassigned"
 	}
-	assigneeStr := assigneeStyle.Render(truncate(assigneeText, assigneeMax))
+	assigneeStr := assigneeStyle.Render(truncate(assigneeText, 24))
 
-	var bgKey string
-	if selected {
-		bgKey = "235"
+	// Effort label (e.g. "effort: 2") shown with a clock glyph; all other
+	// label badges are intentionally omitted to keep the row clean.
+	effortStr := ""
+	if ef := effortLabel(issue.Labels); ef != "" {
+		effortStr = base.Foreground(lipgloss.Color("240")).Render("  ⏱ " + ef)
 	}
-	labelStr := issueRowLabels(issue.Labels, bgKey, labelMax)
 
-	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
-	indent := base.Render(strings.Repeat(" ", lineIndent))
-	line2 := indent + assigneeStr + dimSep + labelStr + base.Render(" ")
+	line2 := indent + assigneeStr + effortStr + base.Render(" ")
 	fmt.Fprintf(w, "%s\n%s", line1, line2)
+}
+
+// effortLabel returns the name of the first "effort:" or "size:" label found,
+// or "" if none exist.
+func effortLabel(labels []github.Label) string {
+	for _, l := range labels {
+		low := strings.ToLower(l.Name)
+		if strings.HasPrefix(low, "effort:") || strings.HasPrefix(low, "size:") {
+			return l.Name
+		}
+	}
+	return ""
 }
 
 // issueRowLabels renders a short colored label string for a list row.
