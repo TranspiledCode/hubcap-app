@@ -322,8 +322,8 @@ func (m DashboardModel) View() string {
 	// ── renderRow ─────────────────────────────────────────────────────────────
 	// Renders a two-row item matching the Issues list style.
 	// Line 1: [accent] icon  #N  Title…(fill)…  timestamp
-	// Line 2: [accent]           line2content
-	renderRow := func(selected bool, icon, title, tsStr, line2content string, number int) string {
+	// Line 2: [accent]           line2Left  (fill)  line2Right
+	renderRow := func(selected bool, icon, title, tsStr, line2Left, line2Right string, number int) string {
 		var base lipgloss.Style
 		if selected {
 			base = lipgloss.NewStyle().Background(selectedBg)
@@ -370,9 +370,16 @@ func (m DashboardModel) View() string {
 
 		line1 := accent + icon + "  " + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
 
-		// Line 2: accent + indent matching prefixW + line2content.
+		// Line 2: accent + indent + line2Left (fill) line2Right
 		indent2 := accent + base.Render(strings.Repeat(" ", prefixW-2))
-		line2 := indent2 + line2content + base.Render(" ")
+		line2RightW := lipgloss.Width(line2Right)
+		line2LeftW := prefixW + lipgloss.Width(line2Left)
+		line2FillW := width - line2LeftW - line2RightW - 1
+		if line2FillW < 1 {
+			line2FillW = 1
+		}
+		line2Fill := base.Render(strings.Repeat(" ", line2FillW))
+		line2 := indent2 + line2Left + line2Fill + line2Right + base.Render(" ")
 
 		return line1 + "\n" + line2
 	}
@@ -403,29 +410,29 @@ func (m DashboardModel) View() string {
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
 			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
-			line2 := mutedStyle.Render("@"+truncate(p.Author.Login, 14)) +
+			line2Left := mutedStyle.Render("@"+truncate(p.Author.Login, 14)) +
 				mutedStyle.Render("  ·  ") + summarizeChecks(p.StatusRollup)
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secMyPRs:
 			p := m.data.myPRs[row.itemIdx]
 			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
-			var line2 string
+			var line2Left string
 			if p.HeadRefName != "" && p.BaseRefName != "" {
-				line2 = mutedStyle.Render(truncate(p.HeadRefName, 18)) +
+				line2Left = mutedStyle.Render(truncate(p.HeadRefName, 18)) +
 					lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(" → ") +
 					mutedStyle.Render(truncate(p.BaseRefName, 12))
 			} else if p.IsDraft {
-				line2 = mutedStyle.Render("draft")
+				line2Left = mutedStyle.Render("draft")
 			}
 			if checks := summarizeChecks(p.StatusRollup); checks != "" {
-				if line2 != "" {
-					line2 += mutedStyle.Render("  ·  ") + checks
+				if line2Left != "" {
+					line2Left += mutedStyle.Render("  ·  ") + checks
 				} else {
-					line2 = checks
+					line2Left = checks
 				}
 			}
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
@@ -440,7 +447,7 @@ func (m DashboardModel) View() string {
 			} else {
 				assigneeText = "unassigned"
 			}
-			line2 := mutedStyle.Render(truncate(assigneeText, 20))
+			line2Left := mutedStyle.Render(truncate(assigneeText, 20))
 			const dashMaxLabels = 3
 			shownLabels := iss.Labels
 			labelOverflow := 0
@@ -449,12 +456,17 @@ func (m DashboardModel) View() string {
 				labelOverflow = len(iss.Labels) - dashMaxLabels
 			}
 			if labels := issueRowLabels(shownLabels, "", labelMax); labels != "" {
-				line2 += mutedStyle.Render("  ·  ") + labels
+				line2Left += mutedStyle.Render("  ·  ") + labels
 				if labelOverflow > 0 {
-					line2 += mutedStyle.Render(fmt.Sprintf(" +%d", labelOverflow))
+					line2Left += mutedStyle.Render(fmt.Sprintf(" +%d", labelOverflow))
 				}
 			}
-			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, ts, line2, iss.Number) + "\n")
+			// Type badge right-aligned on line 2, matching the Issues list.
+			var line2Right string
+			if iss.IssueType != "" {
+				line2Right = lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Render(iss.IssueType)
+			}
+			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
 		}
 	}
 
