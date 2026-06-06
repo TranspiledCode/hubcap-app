@@ -73,9 +73,27 @@ const issueFields = `
     labels(first:20)    { nodes { name  } }
     issueType           { name           }`
 
+// ── repoOwnerName resolves the current repo's owner and name ─────────────────
+// The {owner}/{repo} gh-CLI placeholders only expand in REST URL paths, not in
+// GraphQL -f field values, so we resolve them explicitly via FetchRepo().
+
+func repoOwnerName() (owner, name string, err error) {
+	nwo := FetchRepo() // "owner/repo" or "—" on error
+	parts := strings.SplitN(nwo, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("could not determine repository owner/name (got %q)", nwo)
+	}
+	return parts[0], parts[1], nil
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 func FetchIssues(filters Filters) ([]Issue, error) {
+	owner, name, err := repoOwnerName()
+	if err != nil {
+		return nil, err
+	}
+
 	states := gqlStateFilter(filters.State)
 
 	// Build inline filterBy — values come from our own form so no injection risk.
@@ -102,8 +120,8 @@ query($owner:String!, $name:String!, $limit:Int!) {
 
 	out, err := RunCommand("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", "owner={owner}",
-		"-f", "name={repo}",
+		"-f", "owner="+owner,
+		"-f", "name="+name,
 		"-F", "limit="+strconv.Itoa(filters.Limit),
 	)
 	if err != nil {
@@ -131,6 +149,11 @@ query($owner:String!, $name:String!, $limit:Int!) {
 }
 
 func FetchIssue(number int) (Issue, error) {
+	owner, name, err := repoOwnerName()
+	if err != nil {
+		return Issue{}, err
+	}
+
 	query := fmt.Sprintf(`
 query($owner:String!, $name:String!) {
   repository(owner:$owner, name:$name) {
@@ -141,8 +164,8 @@ query($owner:String!, $name:String!) {
 
 	out, err := RunCommand("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", "owner={owner}",
-		"-f", "name={repo}",
+		"-f", "owner="+owner,
+		"-f", "name="+name,
 	)
 	if err != nil {
 		return Issue{}, err
