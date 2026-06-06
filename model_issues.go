@@ -821,7 +821,7 @@ func (m IssuesModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded, m.detail.AtBottom(), m.detail.ScrollPercent()))
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded))
 		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
@@ -853,5 +853,5 @@ func renderIssueDetailContent(issue github.Issue, width int) string {
 // Action feedback (toast) is shown in the footer bar by AppModel so it never
 // changes the body height.
 func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(vp.View()) + "\n"
+	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
 }

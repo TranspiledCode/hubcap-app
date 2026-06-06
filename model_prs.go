@@ -665,7 +665,7 @@ func (m PRsModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4, m.detail.AtBottom(), m.detail.ScrollPercent()))
+		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4))
 		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
@@ -685,5 +685,5 @@ func renderPRDetailContent(pr github.PullRequest, width int) string {
 // renderPRDetailView renders the scrollable viewport only.
 // Action feedback (toast) is shown in the footer bar by AppModel.
 func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(vp.View()) + "\n"
+	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
 }
