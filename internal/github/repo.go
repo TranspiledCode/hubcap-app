@@ -34,6 +34,9 @@ type Issue struct {
 	Assignees []User  `json:"assignees"`
 	Labels    []Label `json:"labels"`
 	CreatedAt string  `json:"createdAt"`
+	// IssueType is the GitHub native issue type name (e.g. "Bug", "Feature").
+	// Empty string means the org hasn't configured issue types or none is set.
+	IssueType string
 }
 
 type PullRequest struct {
