@@ -317,6 +317,7 @@ type IssuesModel struct {
 	detail        viewport.Model
 	detailIssue   github.Issue
 	loadingDetail bool
+	metaExpanded  bool // true = show expanded metadata strip
 
 	// Action feedback.
 	// actionPending is set immediately on key press so the footer shows
@@ -509,7 +510,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 		m.detailIssue = msg.issue
 		content := renderIssueDetailContent(msg.issue, m.width)
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
+		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
 		m.detail.SetContent(content)
 		m.showDetail = true
 
@@ -569,7 +570,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = m.height - headerHeightDetail - metaStripHeight - 2
+			m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
 		}
 
 	case spinner.TickMsg:
@@ -589,8 +590,13 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			switch {
 			case key.Matches(msg, keys.Back):
 				m.showDetail = false
+				m.metaExpanded = false
 				m.actionMsg = ""
 				m.actionErr = nil
+				return m, nil
+			case key.Matches(msg, keys.IssueExpandMeta):
+				m.metaExpanded = !m.metaExpanded
+				m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
 				return m, nil
 			case key.Matches(msg, keys.Refresh):
 				m.loadingDetail = true
@@ -815,7 +821,7 @@ func (m IssuesModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4))
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded))
 		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
 		return b.String()
 	}
@@ -826,6 +832,14 @@ func (m IssuesModel) View() string {
 
 // headerHeight returns the number of lines used by headerView() with filter bar.
 func headerHeight() int { return headerHeightFull }
+
+// currentMetaHeight returns the meta strip height based on the expansion state.
+func (m IssuesModel) currentMetaHeight() int {
+	if m.metaExpanded {
+		return metaStripExpandedHeight
+	}
+	return metaStripHeight
+}
 
 // renderIssueDetailContent builds scrollable body-only content for the viewport.
 func renderIssueDetailContent(issue github.Issue, _ int) string {

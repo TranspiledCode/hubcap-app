@@ -31,11 +31,12 @@ type keyMap struct {
 	CopyURL key.Binding
 
 	// ── Issue detail ───────────────────────────────────────────────────────
-	IssueClose   key.Binding
-	IssueAssign  key.Binding
-	IssueLabel   key.Binding
-	IssueDevelop key.Binding
-	IssuePR      key.Binding
+	IssueClose      key.Binding
+	IssueAssign     key.Binding
+	IssueLabel      key.Binding
+	IssueDevelop    key.Binding
+	IssuePR         key.Binding
+	IssueExpandMeta key.Binding
 
 	// ── PR detail ──────────────────────────────────────────────────────────
 	PRCheckout key.Binding
@@ -69,11 +70,12 @@ var keys = keyMap{
 	CopyURL: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "copy URL")),
 
 	// ── Issue detail ──────────────────────────────────────────────────────
-	IssueClose:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close/reopen")),
-	IssueAssign:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "assign/unassign")),
-	IssueLabel:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "add label")),
-	IssueDevelop: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "develop")),
-	IssuePR:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "create PR")),
+	IssueClose:      key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close/reopen")),
+	IssueAssign:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "assign/unassign")),
+	IssueLabel:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "add label")),
+	IssueDevelop:    key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "develop")),
+	IssuePR:         key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "create PR")),
+	IssueExpandMeta: key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "expand/collapse details")),
 
 	// ── PR detail ─────────────────────────────────────────────────────────
 	PRCheckout: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout")),
