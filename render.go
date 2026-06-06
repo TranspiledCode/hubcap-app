@@ -538,10 +538,12 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	if createdVal == "" {
 		createdVal = "—"
 	}
-	authorStr := dimDot + mutedSt.Render("Author: ") + authorSt.Render(authorVal)
+	authorStr := mutedSt.Render("Author: ") + authorSt.Render(authorVal)
 	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
-	row2meta := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr) + lipgloss.Width(authorStr) + lipgloss.Width(createdStr) + lipgloss.Width(collapsedPill)
-	row2 = assigneeStr + typeStr + authorStr + createdStr + fill(width-row2meta) + collapsedPill
+	rightStr := authorStr + createdStr + s.Render("  ")
+	expandedLeftW := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr)
+	expandedRightW := lipgloss.Width(rightStr) + lipgloss.Width(collapsedPill)
+	row2 = assigneeStr + typeStr + fill(width-expandedLeftW-expandedRightW) + rightStr + collapsedPill
 
 	// Row 6: label pills with single leading space
 	allPills := buildPills(issue.Labels)
