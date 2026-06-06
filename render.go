@@ -161,8 +161,8 @@ const (
 	headerHeightFull = 7
 
 	// headerHeightDetail is the line count when the filter bar is suppressed (detail views).
-	// title(1) + ▄-spacer(1) + tabs(1) = 3
-	headerHeightDetail = 3
+	// title(1) + ▄-spacer(1) + tabs(1) + ▀-spacer(1) = 4
+	headerHeightDetail = 4
 
 	// metaStripHeight is the fixed line count of the sticky metadata strip
 	// rendered above the viewport in detail views.
@@ -287,12 +287,12 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		fill = 0
 	}
 	b.WriteString(tabRow.String() + tabFillStyle.Render(strings.Repeat(" ", fill)) + "\n")
+	// ▀ half-space: top half = tab bg (236), bottom half = transparent body.
+	// Provides a visual half-line of breathing room below the tab bar in all views.
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("▀", width)) + "\n")
 
-	// ── Line 3: filter/context bar ─────────────────────────────────────────
+	// ── Line 4+: filter/context bar (list views only) ──────────────────────
 	if !detailActive {
-		// ▀ half-space: top half = tab bg (236), bottom half = transparent body.
-		// Gives a visual half-line of breathing room between the nav and filter text.
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("▀", width)) + "\n")
 		sep := filterSepStyle.Render("  │  ")
 		fmtFilter := func(key, val string) string {
 			active := val != "" && val != "any"
