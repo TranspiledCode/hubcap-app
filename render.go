@@ -184,7 +184,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	tabBg := lipgloss.Color("236")
 
 	topBarStyle := lipgloss.NewStyle().Background(bg)
-	versionStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208"))
+	versionStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("240"))
 	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208")).Bold(true)
 	helpStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("244"))
 	refreshStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("86")).Bold(true)
