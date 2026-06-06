@@ -566,15 +566,13 @@ gh pr create --fill
 
 ### Phase 6: Release Process
 
-> **⚠️ CRITICAL: You MUST create a git tag before creating the PR to main!**
+> **⚠️ Pushing a `v*` tag to `dev` automatically triggers GoReleaser via GitHub Actions.**
+> GoReleaser will:
+> - Cross-compile binaries for macOS (arm64, amd64) and Linux (arm64, amd64)
+> - Create a GitHub Release with `.tar.gz` archives and checksums
+> - Generate and push the Homebrew formula to `TranspiledCode/homebrew-tap`
 >
-> This step:
->
-> - Creates a version tag (e.g., v1.0.0)
-> - Follows semantic versioning based on changes
-> - Tags should follow conventional commit analysis
->
-> **Without this step, the release will not be properly versioned!**
+> You still need to PR `dev → main` after tagging so `main` stays current.
 
 **👥 Release Checklist - Follow in Order:**
 
@@ -591,45 +589,35 @@ git pull origin dev
 git log --oneline origin/main..origin/dev
 
 # ✅ Step 3: Update VERSION file (REQUIRED - this is what the binary reads!)
-echo "1.0.0" > VERSION   # replace with actual new version
+echo "X.Y.Z" > VERSION   # replace with actual new version
 git add VERSION
-git commit -m "chore: bump version to v1.0.0"
+git commit -m "chore: bump version to vX.Y.Z"
 git push origin dev
 
-# ✅ Step 4: Create version tag (REQUIRED - DO NOT SKIP!)
-git tag -a v1.0.0 -m "Release v1.0.0"
-# Examples:
-# git tag -a v1.0.1 -m "Release v1.0.1"  # PATCH
-# git tag -a v1.1.0 -m "Release v1.1.0"  # MINOR
-# git tag -a v2.0.0 -m "Release v2.0.0"  # MAJOR
+# ✅ Step 4: Create and push version tag
+# Pushing the tag triggers GoReleaser automatically via GitHub Actions.
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+# ⬆️ This kicks off: cross-compile → GitHub Release → Homebrew formula update
 
-# ✅ Step 5: Push tags
-git push origin v1.0.0
+# ✅ Step 5: Watch the release workflow
+gh run list --workflow=release.yml --limit 3
 
-# ✅ Step 6: Create PR to main for production deployment
+# ✅ Step 6: Create PR to main
 gh pr create --base main --head dev --fill
 
 # ✅ Step 7: Wait for PR approval and merge
 gh pr view <PR-number> --json state,mergedAt
 
 # ✅ Step 8: IMMEDIATELY after merge - Sync dev with main
-# ⚠️  REQUIRED — skipping this causes conflicts on the next release
-git checkout dev
-git pull origin dev
-git merge origin/main
-git push origin dev
+git checkout dev && git merge origin/main && git push origin dev
 
-# ✅ Step 8: Verify branches are synced (output should be empty)
+# ✅ Step 9: Verify branches are in sync (output should be empty)
 git log --oneline origin/main..origin/dev
-git log --oneline origin/dev..origin/main
 
-# ✅ Step 9: Clean up merged feature branches
-git branch -D <feature-branch-name>           # Delete local
-git push origin --delete <feature-branch-name> # Delete remote
-
-# ✅ Step 10: Update local main
-git checkout main
-git pull origin main
+# ✅ Step 10: Clean up merged feature branches
+git branch -D <feature-branch-name>
+git push origin --delete <feature-branch-name>
 
 # ✅ Step 11: Return to dev for next work
 git checkout dev

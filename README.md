@@ -1,6 +1,6 @@
 # hubcap
 
-![hubcap logo](hubcap-logo.png)
+<img src="https://pub-98b467145a3b4d5aab71817835431ccc.r2.dev/images/hubcap-logo.png" alt="hubcap logo" width="200"/>
 
 A terminal UI for browsing GitHub issues and pull requests, built on top of the [GitHub CLI (`gh`)](https://cli.github.com/).
 
@@ -16,19 +16,22 @@ A terminal UI for browsing GitHub issues and pull requests, built on top of the 
 
 ## Requirements
 
-- Go 1.21+
 - [`gh`](https://cli.github.com/) authenticated and on your `PATH`
 - Run from inside a directory that is part of a GitHub repository (or any subdirectory thereof)
 
 ## Installation
 
+### Homebrew (recommended)
+
 ```sh
-go build -o hubcap .
+brew tap TranspiledCode/tap
+brew install hubcap
 ```
 
-Move the resulting binary somewhere on your `PATH`, e.g.:
+### Build from source
 
 ```sh
+go build -o hubcap .
 mv hubcap /usr/local/bin/
 ```
 
@@ -42,16 +45,16 @@ hubcap
 
 ### Keyboard shortcuts
 
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` | Navigate list |
-| `Enter` | Open selected item |
-| `Tab` / `Shift+Tab` | Switch between Issues and PRs tabs |
-| `n` | New issue / new PR |
-| `f` | Change filters |
-| `r` | Refresh list |
-| `q` / `Esc` / `Ctrl+C` | Quit / back |
-| `1`–`9` | Jump to item by position |
+| Key                    | Action                             |
+| ---------------------- | ---------------------------------- |
+| `↑` / `↓`              | Navigate list                      |
+| `Enter`                | Open selected item                 |
+| `Tab` / `Shift+Tab`    | Switch between Issues and PRs tabs |
+| `n`                    | New issue / new PR                 |
+| `f`                    | Change filters                     |
+| `r`                    | Refresh list                       |
+| `q` / `Esc` / `Ctrl+C` | Quit / back                        |
+| `1`–`9`                | Jump to item by position           |
 
 ### Issue actions
 
