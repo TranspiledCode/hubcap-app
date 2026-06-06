@@ -10,6 +10,7 @@ import (
 
 	"hubcap/internal/github"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -1143,6 +1144,27 @@ func timeAgo(ts string) string {
 	default:
 		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
 	}
+}
+
+// renderMarkdown renders a Markdown string to ANSI-styled terminal output
+// using glamour. width is the available content width for word wrapping.
+// Falls back to the raw string if glamour fails so the body is never blank.
+func renderMarkdown(body string, width int) string {
+	if body == "" {
+		return ""
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return body
+	}
+	out, err := r.Render(body)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 func fatal(err error) {

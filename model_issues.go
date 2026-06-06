@@ -842,14 +842,11 @@ func (m IssuesModel) currentMetaHeight() int {
 }
 
 // renderIssueDetailContent builds scrollable body-only content for the viewport.
-func renderIssueDetailContent(issue github.Issue, _ int) string {
-	var b strings.Builder
-	if issue.Body != "" {
-		b.WriteString(issue.Body + "\n")
-	} else {
-		b.WriteString(styleGray.Render("No description.") + "\n")
+func renderIssueDetailContent(issue github.Issue, width int) string {
+	if issue.Body == "" {
+		return styleGray.Render("No description.") + "\n"
 	}
-	return b.String()
+	return renderMarkdown(issue.Body, width-4)
 }
 
 // renderIssueDetailView renders the scrollable viewport only.
