@@ -179,9 +179,21 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Line 1: accent + dot + number + title + fill + timestamp
 	line1 := accent + dot + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
 
-	// Line 2: indented to align with the title, showing assignee + effort label.
+	// Line 2: indented to align with the title, showing assignee + labels.
 	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	lineIndent := 10
+	contentW := width - lineIndent - 1
+	if contentW < 20 {
+		contentW = 20
+	}
+
+	const sepW = 5 // "  ·  "
+	assigneeMax := (contentW - sepW) * 30 / 100
+	if assigneeMax < 8 {
+		assigneeMax = 8
+	}
+	labelMax := contentW - assigneeMax - sepW
+
 	indent := base.Render(strings.Repeat(" ", lineIndent))
 
 	assigneeStyle := base.Foreground(lipgloss.Color("244"))
@@ -191,29 +203,35 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	} else {
 		assigneeText = "unassigned"
 	}
-	assigneeStr := assigneeStyle.Render(truncate(assigneeText, 24))
+	assigneeStr := assigneeStyle.Render(truncate(assigneeText, assigneeMax))
 
-	// Effort label (e.g. "effort: 2") shown with a clock glyph; all other
-	// label badges are intentionally omitted to keep the row clean.
-	effortStr := ""
-	if ef := effortLabel(issue.Labels); ef != "" {
-		effortStr = base.Foreground(lipgloss.Color("240")).Render("  ⏱ " + ef)
-	}
-
-	line2 := indent + assigneeStr + effortStr + base.Render(" ")
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
-}
-
-// effortLabel returns the name of the first "effort:" or "size:" label found,
-// or "" if none exist.
-func effortLabel(labels []github.Label) string {
-	for _, l := range labels {
-		low := strings.ToLower(l.Name)
-		if strings.HasPrefix(low, "effort:") || strings.HasPrefix(low, "size:") {
-			return l.Name
+	// Labels: show up to 4 badges, then a dim "+N" overflow count.
+	const maxLabels = 4
+	var labelPart string
+	if len(issue.Labels) > 0 {
+		shown := issue.Labels
+		overflow := 0
+		if len(issue.Labels) > maxLabels {
+			shown = issue.Labels[:maxLabels]
+			overflow = len(issue.Labels) - maxLabels
+		}
+		var bgKey string
+		if selected {
+			bgKey = "235"
+		}
+		labelPart = issueRowLabels(shown, bgKey, labelMax)
+		if overflow > 0 {
+			labelPart += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
 		}
 	}
-	return ""
+
+	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	line2 := indent + assigneeStr
+	if labelPart != "" {
+		line2 += dimSep + labelPart
+	}
+	line2 += base.Render(" ")
+	fmt.Fprintf(w, "%s\n%s", line1, line2)
 }
 
 // issueRowLabels renders a short colored label string for a list row.
