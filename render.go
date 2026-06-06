@@ -418,15 +418,24 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	}
 	typeStr := dimDot + mutedSt.Render("Type: ") + authorSt.Render(typeVal)
 
-	// In collapsed mode cap pills at 3 with "+N"; expanded shows all.
-	const maxPills = 3
+	// Collapsed: show only the single highest-priority label + dim "+N more".
+	// Expanded: show every label with no cap.
 	var pillsStr string
 	if len(issue.Labels) > 0 {
-		shown := issue.Labels
+		var shown []github.Label
 		overflow := 0
-		if !expanded && len(issue.Labels) > maxPills {
-			shown = issue.Labels[:maxPills]
-			overflow = len(issue.Labels) - maxPills
+		if expanded {
+			shown = issue.Labels
+		} else {
+			// Pick the label with the lowest labelPriority value (= most important).
+			best := 0
+			for i := 1; i < len(issue.Labels); i++ {
+				if labelPriority(issue.Labels[i].Name) < labelPriority(issue.Labels[best].Name) {
+					best = i
+				}
+			}
+			shown = issue.Labels[best : best+1]
+			overflow = len(issue.Labels) - 1
 		}
 		pills := make([]string, len(shown))
 		for i, l := range shown {
