@@ -166,6 +166,10 @@ const (
 	// rendered above the viewport in detail views.
 	// spacer (1) + row1 (1) + half-line gap (1) + row2 (1) + separator (1) = 5
 	metaStripHeight = 5
+
+	// metaStripExpandedHeight is the line count when the meta strip is expanded.
+	// Adds: author+created row (1) + blank gap (1) = +2 → 7 total
+	metaStripExpandedHeight = 7
 )
 
 // headerView returns the header as a string for use in bubbletea View() functions.
@@ -337,14 +341,21 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 }
 
 // renderIssueMetaStrip renders the fixed 5-line metadata strip shown above the
-// viewport in issue detail view. Always produces exactly metaStripHeight lines.
+// viewport in issue detail view.
+// Collapsed (metaStripHeight = 5 lines):
 //
 //	Line 1 — spacer
 //	Line 2 — #number  title (truncated)  ···  ● STATE
-//	Line 3 — half-line gap (▁ thin rule)
-//	Line 4 — Assignee: name (left)  ···  label pills (right)
+//	Line 3 — half-line gap
+//	Line 4 — Assignee: …  ·  Type: …  (left)   label pills capped at 3 (right)
 //	Line 5 — separator
-func renderIssueMetaStrip(issue github.Issue, width int) string {
+//
+// Expanded (metaStripExpandedHeight = 7 lines), adds before separator:
+//
+//	Line 5 — Author: …  ·  Created: …  (left)   remaining pills (right)
+//	Line 6 — blank gap
+//	Line 7 — separator
+func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	if width == 0 {
 		width = 80
 	}
@@ -407,12 +418,13 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 	}
 	typeStr := dimDot + mutedSt.Render("Type: ") + authorSt.Render(typeVal)
 
+	// In collapsed mode cap pills at 3 with "+N"; expanded shows all.
 	const maxPills = 3
 	var pillsStr string
 	if len(issue.Labels) > 0 {
 		shown := issue.Labels
 		overflow := 0
-		if len(issue.Labels) > maxPills {
+		if !expanded && len(issue.Labels) > maxPills {
 			shown = issue.Labels[:maxPills]
 			overflow = len(issue.Labels) - maxPills
 		}
@@ -431,12 +443,31 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 	pillsW := lipgloss.Width(pillsStr)
 	row2 := assigneeStr + typeStr + fill(width-leftW-pillsW) + pillsStr
 
-	// ── Line 5: separator ────────────────────────────────────────────────────
+	// ── Separator (last line either way) ─────────────────────────────────────
 	sepLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("237")).
 		Render(strings.Repeat("─", width))
 
-	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
+	if !expanded {
+		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
+	}
+
+	// ── Expanded lines 5–6 ────────────────────────────────────────────────────
+	authorVal := "—"
+	if issue.Author.Login != "" {
+		authorVal = "@" + issue.Author.Login
+	}
+	createdVal := timeAgo(issue.CreatedAt)
+	if createdVal == "" {
+		createdVal = "—"
+	}
+	authorStr := s.Render("  ") + mutedSt.Render("Author: ") + authorSt.Render(authorVal)
+	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
+	row3 := authorStr + createdStr + fill(width-lipgloss.Width(authorStr)-lipgloss.Width(createdStr))
+
+	expandGap := fill(width)
+
+	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + row3 + "\n" + expandGap + "\n" + sepLine + "\n"
 }
 
 // renderPRMetaStrip renders the fixed 5-line metadata strip shown above the
