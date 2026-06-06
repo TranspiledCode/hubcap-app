@@ -408,7 +408,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	if len(issue.Assignees) > 0 {
 		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + authorSt.Render(joinUsers(issue.Assignees))
 	} else {
-		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + mutedSt.Render("—")
+		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + mutedSt.Render("unassigned")
 	}
 
 	dimDot := s.Foreground(lipgloss.Color("238")).Render("  ·  ")
