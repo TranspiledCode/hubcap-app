@@ -823,26 +823,26 @@ func labelPillColors(name string) (bg, fg lipgloss.Color) {
 		strings.Contains(low, "priority:critical"),
 		strings.Contains(low, "type:bug"),
 		low == "bug", low == "critical", low == "blocker":
-		return "1", "15" // red bg, white text
+		return "88", "255" // muted dark red, white text
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return "3", "0" // yellow bg, black text
+		return "136", "255" // muted amber, white text
 	case strings.Contains(low, "priority:low"):
-		return "2", "0" // green bg, black text
+		return "22", "255" // muted dark green, white text
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
 		low == "enhancement", low == "feature":
-		return "6", "0" // cyan bg, black text
+		return "23", "255" // muted dark teal, white text
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return "5", "15" // purple bg, white text
+		return "54", "255" // muted dark purple, white text
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return "8", "15" // dark gray bg, white text
+		return "238", "245" // dark gray bg, dim white text
 	default:
-		return "208", "0" // orange bg, black text
+		return "94", "255" // muted brown-orange, white text
 	}
 }
 
@@ -861,10 +861,13 @@ func labelPill(stripBg lipgloss.Color, name string) string {
 	return gutter + chip + gutter
 }
 
-// labelStyle returns a lipgloss style for a label based on its name.
-// Labels are categorized by common prefixes (priority:, type:, effort:) or
-// well-known keywords like "bug", "enhancement", "feature".
+// labelStyle returns a lipgloss style for a label text in list rows.
+// Uses muted mid-range foreground colors — same hue family as the pill
+// backgrounds but light enough to read on a dark terminal background.
 func labelStyle(name string) lipgloss.Style {
+	fg := func(c string) lipgloss.Style {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(c))
+	}
 	low := strings.ToLower(name)
 	switch {
 	case strings.Contains(low, "priority:high"),
@@ -873,27 +876,27 @@ func labelStyle(name string) lipgloss.Style {
 		low == "bug",
 		low == "critical",
 		low == "blocker":
-		return styleRed
+		return fg("167") // muted red
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return styleYellow
+		return fg("178") // muted amber
 	case strings.Contains(low, "priority:low"):
-		return styleGreen
+		return fg("71") // muted green
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
 		low == "enhancement",
 		low == "feature":
-		return styleCyan
+		return fg("73") // muted teal
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return stylePurple
+		return fg("98") // muted purple
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return styleGray
+		return fg("243") // dim gray
 	default:
-		return styleOrange
+		return fg("173") // muted orange
 	}
 }
 
