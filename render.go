@@ -501,16 +501,32 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 
 	var collapsedPill string // right side of row2 in collapsed mode
 	if !expanded && len(issue.Labels) > 0 {
-		best := 0
-		for i := 1; i < len(issue.Labels); i++ {
-			if labelPriority(issue.Labels[i].Name) < labelPriority(issue.Labels[best].Name) {
-				best = i
-			}
+		// Pick up to 2 highest-priority labels by sorting indices.
+		const maxCollapsed = 2
+		idxs := make([]int, len(issue.Labels))
+		for i := range idxs {
+			idxs[i] = i
 		}
-		overflow := len(issue.Labels) - 1
-		collapsedPill = labelPill(bg, issue.Labels[best].Name)
+		// Partial insertion sort — only need the top maxCollapsed.
+		for i := 0; i < len(idxs) && i < maxCollapsed; i++ {
+			best := i
+			for j := i + 1; j < len(idxs); j++ {
+				if labelPriority(issue.Labels[idxs[j]].Name) < labelPriority(issue.Labels[idxs[best]].Name) {
+					best = j
+				}
+			}
+			idxs[i], idxs[best] = idxs[best], idxs[i]
+		}
+		shown := idxs
+		if len(shown) > maxCollapsed {
+			shown = shown[:maxCollapsed]
+		}
+		overflow := len(issue.Labels) - len(shown)
+		for _, i := range shown {
+			collapsedPill += labelPill(bg, issue.Labels[i].Name)
+		}
 		if overflow > 0 {
-			collapsedPill += s.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+			collapsedPill += s.Foreground(lipgloss.Color("252")).Render(fmt.Sprintf(" +%d", overflow))
 		}
 		collapsedPill += s.Render("  ")
 	}
