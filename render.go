@@ -170,8 +170,9 @@ const (
 	metaStripHeight = 5
 
 	// metaStripExpandedHeight is the line count when the meta strip is expanded.
-	// Adds: author+created row (1) + blank gap (1) = +2 → 7 total
-	metaStripExpandedHeight = 7
+	// spacer(1) + title(1) + thinGap(1) + assignee/type(1) + halfGap(1)
+	// + author/created(1) + halfGap(1) + labels(1) + separator(1) = 9
+	metaStripExpandedHeight = 9
 )
 
 // headerView returns the header as a string for use in bubbletea View() functions.
@@ -498,8 +499,10 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
 	}
 
-	// ── Expanded lines 5–7 ────────────────────────────────────────────────────
-	// Row 5: Author · Created
+	// ── Expanded lines 5–9 ────────────────────────────────────────────────────
+	halfGap := fill(width) // blank spacing line between sections
+
+	// Row 6: Author · Created
 	authorVal := "—"
 	if issue.Author.Login != "" {
 		authorVal = "@" + issue.Author.Login
@@ -512,12 +515,13 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
 	row3 := authorStr + createdStr + fill(width-lipgloss.Width(authorStr)-lipgloss.Width(createdStr))
 
-	// Row 6: all label pills on their own line
+	// Row 8: label pills flush-left (no extra indent — pill's own gutter aligns them)
 	allPills := buildPills(issue.Labels)
 	allPillsW := lipgloss.Width(allPills)
-	row4 := s.Render("  ") + allPills + fill(width-2-allPillsW)
+	row4 := allPills + fill(width-allPillsW)
 
-	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + row3 + "\n" + row4 + "\n" + sepLine + "\n"
+	// spacer + title + thinGap + row2 + halfGap + row3 + halfGap + row4 + sep = 9 lines
+	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + halfGap + "\n" + row3 + "\n" + halfGap + "\n" + row4 + "\n" + sepLine + "\n"
 }
 
 // renderPRMetaStrip renders the fixed 5-line metadata strip shown above the
