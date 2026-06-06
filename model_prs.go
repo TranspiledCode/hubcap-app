@@ -569,6 +569,12 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 						Value(&m.formVals.mergeType),
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
+			case key.Matches(msg, keys.Top):
+				m.detail.GotoTop()
+				return m, nil
+			case key.Matches(msg, keys.Bottom):
+				m.detail.GotoBottom()
+				return m, nil
 			}
 			// Viewport scrolling
 			var cmd tea.Cmd

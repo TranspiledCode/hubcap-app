@@ -701,6 +701,12 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 					}
 					return issueActionDoneMsg{message: "PR created."}
 				})
+			case key.Matches(msg, keys.Top):
+				m.detail.GotoTop()
+				return m, nil
+			case key.Matches(msg, keys.Bottom):
+				m.detail.GotoBottom()
+				return m, nil
 			}
 			// Viewport scrolling
 			var cmd tea.Cmd
