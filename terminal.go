@@ -10,7 +10,58 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 )
+
+// confirmAction prompts the user with a styled yes/no confirmation dialog.
+// Returns true if the user confirms, false otherwise (including on error).
+func confirmAction(title, description string, affirmative string) bool {
+	confirmed := false
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Description(description).
+				Affirmative(affirmative).
+				Negative("Cancel").
+				Value(&confirmed),
+		),
+	).WithTheme(huh.ThemeCatppuccin())
+	if err := form.Run(); err != nil {
+		return false
+	}
+	return confirmed
+}
+
+// withSpinner runs a function while displaying a loading spinner
+func withSpinner(message string, fn func() error) error {
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	frame := 0
+
+	done := make(chan error)
+	go func() {
+		done <- fn()
+	}()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-done:
+			fmt.Print("\033[2K\r")
+			return err
+		case <-ticker.C:
+			fmt.Printf("\r%s %s", spinnerStyle.Render(spinnerFrames[frame%len(spinnerFrames)]), message)
+			frame++
+		}
+	}
+}
 
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")
@@ -31,6 +82,42 @@ func prompt(reader *bufio.Reader, label string) string {
 		return ""
 	}
 	return strings.TrimRight(value, "\r\n")
+}
+
+var spinnerModel = spinner.New()
+var spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+
+func init() {
+	spinnerModel.Spinner = spinner.Dot
+	spinnerModel.Style = spinnerStyle
+}
+
+// startSpinner starts a spinner in a goroutine and returns a channel to stop it
+func startSpinner(message string) chan struct{} {
+	stopChan := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		frames := spinnerModel.Spinner.Frames
+		i := 0
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-ticker.C:
+				fmt.Printf("\r%s %s", spinnerStyle.Render(frames[i]), message)
+				i = (i + 1) % len(frames)
+			}
+		}
+	}()
+	return stopChan
+}
+
+func stopSpinner(stopChan chan struct{}) {
+	close(stopChan)
+	fmt.Print("\r")
+	// Clear the spinner line
+	fmt.Print(strings.Repeat(" ", 50) + "\r")
 }
 
 func pause(reader *bufio.Reader) {
@@ -163,7 +250,7 @@ func menu(reader *bufio.Reader, options []string) string {
 		fmt.Print("\033[?25l")
 		for index, option := range options {
 			if index == selected {
-				fmt.Printf("%s> %s%s\033[K\r\n", colorSelect, option, colorReset)
+				fmt.Printf("%s %s\033[K\r\n", styleCyan.Render(">"), option)
 			} else {
 				fmt.Printf("  %s\033[K\r\n", option)
 			}

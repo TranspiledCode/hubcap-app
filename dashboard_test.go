@@ -7,19 +7,17 @@ import (
 	"hubcap/internal/github"
 )
 
-func TestBuildRows_AllSectionsPopulated(t *testing.T) {
-	data := dashboardResult{
-		reviewRequests:  []github.PullRequest{{Number: 1}},
-		myPRs:           []github.PullRequest{{Number: 2}},
-		assignedIssues:  []github.Issue{{Number: 3}},
-		availableIssues: []github.Issue{{Number: 4}},
+func TestBuildDashRows_AllSectionsPopulated(t *testing.T) {
+	data := dashboardData{
+		reviewRequests: []github.PullRequest{{Number: 1}},
+		myPRs:          []github.PullRequest{{Number: 2}},
+		assignedIssues: []github.Issue{{Number: 3}},
 	}
-	collapsed := [4]bool{}
-	rows := buildRows(data, collapsed)
+	rows := buildDashRows(data)
 
-	// 4 section headers + 4 items = 8 rows total
-	if len(rows) != 8 {
-		t.Fatalf("expected 8 rows, got %d", len(rows))
+	// 3 sections × (1 header + 1 item) = 6 rows
+	if len(rows) != 6 {
+		t.Fatalf("expected 6 rows, got %d", len(rows))
 	}
 	if !rows[0].isHeader {
 		t.Error("expected first row to be a section header")
@@ -29,35 +27,62 @@ func TestBuildRows_AllSectionsPopulated(t *testing.T) {
 	}
 }
 
-func TestBuildRows_CollapsedSection(t *testing.T) {
-	data := dashboardResult{
-		reviewRequests:  []github.PullRequest{{Number: 1}, {Number: 2}},
-		myPRs:           []github.PullRequest{},
-		assignedIssues:  []github.Issue{{Number: 3}},
-		availableIssues: []github.Issue{},
+func TestBuildDashRows_EmptySectionsHidden(t *testing.T) {
+	data := dashboardData{
+		reviewRequests: []github.PullRequest{{Number: 1}},
+		myPRs:          []github.PullRequest{}, // empty — hidden
+		assignedIssues: []github.Issue{{Number: 3}},
 	}
-	// Collapse section 0 (review requests); sections 1,3 are empty so hidden
-	collapsed := [4]bool{true, false, false, false}
-	rows := buildRows(data, collapsed)
+	rows := buildDashRows(data)
 
-	// Section 0 header only (collapsed, 2 items hidden)
-	// Section 1 hidden (empty)
-	// Section 2 header + 1 item
-	// Section 3 hidden (empty)
-	// = 3 rows
-	if len(rows) != 3 {
-		t.Fatalf("expected 3 rows, got %d", len(rows))
+	// section 0: header + 1 item = 2
+	// section 1: hidden (empty)
+	// section 2: header + 1 item = 2
+	// total = 4
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows, got %d", len(rows))
 	}
-	if !rows[0].isHeader || rows[0].sectionID != 0 {
-		t.Error("expected first row to be section 0 header")
+	if rows[0].sectionID != secReviewRequests {
+		t.Errorf("expected first header to be secReviewRequests, got %d", rows[0].sectionID)
+	}
+	if rows[2].sectionID != secAssigned {
+		t.Errorf("expected third row header to be secAssigned, got %d", rows[2].sectionID)
 	}
 }
 
-func TestBuildRows_EmptySectionsHidden(t *testing.T) {
-	data := dashboardResult{} // all empty
-	collapsed := [4]bool{}
-	rows := buildRows(data, collapsed)
+func TestBuildDashRows_AllEmpty(t *testing.T) {
+	data := dashboardData{}
+	rows := buildDashRows(data)
 	if len(rows) != 0 {
-		t.Errorf("expected 0 rows for empty data, got %d", len(rows))
+		t.Errorf("expected 0 rows for all-empty data, got %d", len(rows))
+	}
+}
+
+func TestBuildDashRows_SectionOrder(t *testing.T) {
+	data := dashboardData{
+		reviewRequests: []github.PullRequest{{Number: 10}, {Number: 11}},
+		myPRs:          []github.PullRequest{{Number: 20}},
+		assignedIssues: []github.Issue{{Number: 30}},
+	}
+	rows := buildDashRows(data)
+
+	// section 0: 1 header + 2 items = 3
+	// section 1: 1 header + 1 item  = 2
+	// section 2: 1 header + 1 item  = 2
+	// total = 7
+	if len(rows) != 7 {
+		t.Fatalf("expected 7 rows, got %d", len(rows))
+	}
+	if rows[0].sectionID != secReviewRequests || !rows[0].isHeader {
+		t.Errorf("row 0 should be secReviewRequests header")
+	}
+	if rows[1].isHeader || rows[1].sectionID != secReviewRequests {
+		t.Errorf("row 1 should be secReviewRequests item")
+	}
+	if rows[3].sectionID != secMyPRs || !rows[3].isHeader {
+		t.Errorf("row 3 should be secMyPRs header")
+	}
+	if rows[5].sectionID != secAssigned || !rows[5].isHeader {
+		t.Errorf("row 5 should be secAssigned header")
 	}
 }

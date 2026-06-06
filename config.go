@@ -11,12 +11,18 @@ import (
 )
 
 type Config struct {
-	AvailableFilter github.Filters `json:"available_filter"`
+	AvailableFilter     github.Filters `json:"available_filter"`
+	AutoRefreshEnabled  bool           `json:"auto_refresh_enabled"`
+	AutoRefreshInterval int            `json:"auto_refresh_interval"` // in seconds
+	UITheme             string         `json:"ui_theme"`              // "minimal" | "default" | "comfortable"
 }
 
 func defaultConfig() Config {
 	return Config{
-		AvailableFilter: github.Filters{State: "open", Limit: 25},
+		AvailableFilter:     github.Filters{State: "open", Limit: 25},
+		AutoRefreshEnabled:  false,
+		AutoRefreshInterval: 60,
+		UITheme:             "default",
 	}
 }
 

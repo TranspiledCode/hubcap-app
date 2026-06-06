@@ -2,18 +2,52 @@
 package github
 
 import (
+	"encoding/json"
 	"testing"
 )
 
-func TestParseIssues(t *testing.T) {
-	data := []byte(`[
-		{"number":42,"title":"Fix bug","state":"open","url":"https://github.com/o/r/issues/42",
-		 "assignees":[{"login":"alice"}],"labels":[{"name":"bug"}],"createdAt":"2026-01-01T00:00:00Z"},
-		{"number":43,"title":"Add feature","state":"closed","url":"https://github.com/o/r/issues/43",
-		 "assignees":[],"labels":[],"createdAt":"2026-01-02T00:00:00Z"}
-	]`)
+// parseGQLIssues is a test helper that unmarshals a GraphQL response body into
+// a slice of Issue, mirroring what FetchIssues does internally.
+func parseGQLIssues(data []byte) ([]Issue, error) {
+	var resp struct {
+		Data struct {
+			Repository struct {
+				Issues struct {
+					Nodes []gqlIssueNode `json:"nodes"`
+				} `json:"issues"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	nodes := resp.Data.Repository.Issues.Nodes
+	issues := make([]Issue, len(nodes))
+	for i, n := range nodes {
+		issues[i] = n.toIssue()
+	}
+	return issues, nil
+}
 
-	issues, err := parseIssues(data)
+func TestParseIssues(t *testing.T) {
+	data := []byte(`{
+		"data": { "repository": { "issues": { "nodes": [
+			{"number":42,"title":"Fix bug","state":"open","url":"https://github.com/o/r/issues/42",
+			 "createdAt":"2026-01-01T00:00:00Z",
+			 "author":{"login":"bob"},
+			 "assignees":{"nodes":[{"login":"alice"}]},
+			 "labels":{"nodes":[{"name":"bug"}]},
+			 "issueType":{"name":"Bug"}},
+			{"number":43,"title":"Add feature","state":"closed","url":"https://github.com/o/r/issues/43",
+			 "createdAt":"2026-01-02T00:00:00Z",
+			 "author":{"login":"bob"},
+			 "assignees":{"nodes":[]},
+			 "labels":{"nodes":[]},
+			 "issueType":null}
+		]}}}
+	}`)
+
+	issues, err := parseGQLIssues(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,13 +63,20 @@ func TestParseIssues(t *testing.T) {
 	if issues[0].Labels[0].Name != "bug" {
 		t.Errorf("expected label bug, got %s", issues[0].Labels[0].Name)
 	}
+	if issues[0].IssueType != "Bug" {
+		t.Errorf("expected IssueType Bug, got %q", issues[0].IssueType)
+	}
 	if issues[1].State != "closed" {
 		t.Errorf("expected closed state, got %s", issues[1].State)
+	}
+	if issues[1].IssueType != "" {
+		t.Errorf("expected empty IssueType for null, got %q", issues[1].IssueType)
 	}
 }
 
 func TestParseIssues_Empty(t *testing.T) {
-	issues, err := parseIssues([]byte(`[]`))
+	data := []byte(`{"data":{"repository":{"issues":{"nodes":[]}}}}`)
+	issues, err := parseGQLIssues(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +86,7 @@ func TestParseIssues_Empty(t *testing.T) {
 }
 
 func TestParseIssues_Invalid(t *testing.T) {
-	_, err := parseIssues([]byte(`not json`))
+	_, err := parseGQLIssues([]byte(`not json`))
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}
