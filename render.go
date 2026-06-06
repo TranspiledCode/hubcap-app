@@ -341,6 +341,29 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	return b.String()
 }
 
+// metaSepLine renders the separator line shared by all meta strips.
+// When atBottom is false it embeds a dim "↓ N%" scroll hint in the centre so
+// the user knows there is more content to scroll. No height change — it always
+// produces exactly one line.
+func metaSepLine(width int, atBottom bool, scrollPct float64) string {
+	dashSt := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	if atBottom {
+		return dashSt.Render(strings.Repeat("─", width))
+	}
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).
+		Render(fmt.Sprintf(" ↓ %d%% ", int(scrollPct*100)))
+	hintW := lipgloss.Width(hint)
+	left := (width - hintW) / 2
+	right := width - hintW - left
+	if left < 0 {
+		left = 0
+	}
+	if right < 0 {
+		right = 0
+	}
+	return dashSt.Render(strings.Repeat("─", left)) + hint + dashSt.Render(strings.Repeat("─", right))
+}
+
 // renderIssueMetaStrip renders the fixed 5-line metadata strip shown above the
 // viewport in issue detail view.
 // Collapsed (metaStripHeight = 5 lines):
@@ -356,7 +379,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 //	Line 5 — Author: …  ·  Created: …  (left)   remaining pills (right)
 //	Line 6 — blank gap
 //	Line 7 — separator
-func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
+func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, atBottom bool, scrollPct float64) string {
 	if width == 0 {
 		width = 80
 	}
@@ -454,9 +477,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	row2 := assigneeStr + typeStr + fill(width-leftW-pillsW) + pillsStr
 
 	// ── Separator (last line either way) ─────────────────────────────────────
-	sepLine := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("237")).
-		Render(strings.Repeat("─", width))
+	sepLine := metaSepLine(width, atBottom, scrollPct)
 
 	if !expanded {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
@@ -505,7 +526,7 @@ func prStatusPill(stripBg lipgloss.Color, bg lipgloss.Color, fg lipgloss.Color, 
 //	Line 3 — blank gap
 //	Line 4 — ⎇ head → base · by author (left)  ···  status + label pills (right)
 //	Line 5 — separator
-func renderPRMetaStrip(pr github.PullRequest, width int) string {
+func renderPRMetaStrip(pr github.PullRequest, width int, atBottom bool, scrollPct float64) string {
 	if width == 0 {
 		width = 80
 	}
@@ -621,9 +642,7 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	row2 := leftStr + fill(width-leftW-rightW) + rightStr
 
 	// ── Line 5: separator ────────────────────────────────────────────────────
-	sepLine := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("237")).
-		Render(strings.Repeat("─", width))
+	sepLine := metaSepLine(width, atBottom, scrollPct)
 
 	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + sepLine + "\n"
 }
