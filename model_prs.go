@@ -96,15 +96,15 @@ func (p prListItem) FilterValue() string {
 }
 
 // ── prDelegate ────────────────────────────────────────────────────────────────
-// Compact single-line delegate: Height=1, Spacing=0.
-// Layout per row:
+// Two-row delegate matching the Issues list style: Height=2, Spacing=1.
 //
-//	[accent] ● #N   Title…(fill)…  author  checks  label1 · label2
+// Line 1: [accent] ⤴ #N   Title…(fill)…  timestamp
+// Line 2: [accent]         @author  ·  checks  ·  labels  (fill)  head → base
 
 type prDelegate struct{}
 
-func (d prDelegate) Height() int                             { return 1 }
-func (d prDelegate) Spacing() int                            { return 0 }
+func (d prDelegate) Height() int                             { return 2 }
+func (d prDelegate) Spacing() int                            { return 1 }
 func (d prDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -124,7 +124,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		base = lipgloss.NewStyle()
 	}
 
-	// Left accent bar.
+	// Left accent bar — reused on both rows so the bar spans the full item height.
 	var accent string
 	if selected {
 		accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
@@ -133,7 +133,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		accent = "  "
 	}
 
-	// ⤴ colored by state: green = open, red = closed, purple = merged, amber = draft.
+	// ⤴ colored by state: green = open, purple = merged, red = closed, amber = draft.
 	var dotColor lipgloss.Color
 	switch {
 	case pr.IsDraft:
@@ -147,70 +147,117 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⤴")
 
-	// PR number.
+	// PR number — left-aligned in a 4-digit-wide field for stable columns.
 	numStyle := base.Foreground(lipgloss.Color("69"))
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
 	numStr := numStyle.Render(fmt.Sprintf(" #%-4d", pr.Number))
 
-	// Right column: author · checks · labels (max 50 chars).
-	var bgKey string
-	if selected {
-		bgKey = "235"
+	// Timestamp — rendered first so we know the width before sizing the title.
+	var tsStr string
+	if age := timeAgo(pr.CreatedAt); age != "" {
+		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
 	}
-	// Show "head → base" merge direction
-	authorStyle := base.Foreground(lipgloss.Color("244"))
-	arrowStyle := base.Foreground(lipgloss.Color("252"))
-	var authorStr string
-	if pr.BaseRefName != "" {
-		authorStr = authorStyle.Render(truncate(pr.HeadRefName, 18)) +
-			arrowStyle.Render(" → ") +
-			authorStyle.Render(pr.BaseRefName)
-	} else {
-		authorStr = authorStyle.Render(truncate(pr.Author.Login, 14))
-	}
+	tsW := lipgloss.Width(tsStr)
 
-	checksStr := prRowChecks(pr.StatusRollup, bgKey)
-
-	// Right column budget: ~40% of list width; labels fill what author+checks don't use.
-	rightBudget := width * 40 / 100
-	authorW := lipgloss.Width(authorStr)
-	checksW := lipgloss.Width(checksStr)
-	labelBudget := rightBudget - authorW - checksW - 4 // 4 = two "  " separators
-	if labelBudget < 5 {
-		labelBudget = 5
-	}
-	labelStr := issueRowLabels(pr.Labels, bgKey, labelBudget)
-
-	sep := base.Foreground(lipgloss.Color("238")).Render("  ")
-	rightStr := authorStr
-	if checksStr != "" {
-		rightStr += sep + checksStr
-	}
-	if labelStr != "" {
-		rightStr += sep + labelStr
-	}
-	rightW := lipgloss.Width(rightStr)
-
-	// Title fills the middle.
-	fixed := 2 + 1 + lipgloss.Width(numStr) + 1 + 2 + 1
-	totalMid := width - fixed - rightW
-	if totalMid < 10 {
-		totalMid = 10
-	}
-
+	// Title fills the space between the left prefix and the timestamp.
+	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	titleStyle := base.Foreground(lipgloss.Color("252"))
 	if selected {
 		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
 	}
-	titleStr := titleStyle.Render(truncate(pr.Title, totalMid))
-	titleActualW := lipgloss.Width(titleStr)
+	titleMaxW := width - 10 - 2 - tsW - 1
+	if titleMaxW < 20 {
+		titleMaxW = 20
+	}
+	titleStr := titleStyle.Render(truncate(pr.Title, titleMaxW))
 
-	fill := base.Render(strings.Repeat(" ", totalMid-titleActualW))
+	fillW := width - 10 - lipgloss.Width(titleStr) - tsW - 1
+	if fillW < 1 {
+		fillW = 1
+	}
+	fill := base.Render(strings.Repeat(" ", fillW))
 
-	line := accent + dot + numStr + " " + titleStr + fill + "  " + rightStr + base.Render(" ")
-	fmt.Fprint(w, line)
+	// Line 1: accent + dot + number + title + fill + timestamp
+	line1 := accent + dot + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
+
+	// ── Line 2 ──────────────────────────────────────────────────────────────
+	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
+	const lineIndent = 10
+	var bgKey string
+	if selected {
+		bgKey = "235"
+	}
+
+	authorStyle := base.Foreground(lipgloss.Color("244"))
+	arrowStyle := base.Foreground(lipgloss.Color("252"))
+
+	// Branch direction acts as the right-side badge (like typeStr in issues).
+	var branchStr string
+	if pr.HeadRefName != "" && pr.BaseRefName != "" {
+		branchStr = authorStyle.Render(truncate(pr.HeadRefName, 16)) +
+			arrowStyle.Render(" → ") +
+			authorStyle.Render(pr.BaseRefName)
+	}
+	branchW := lipgloss.Width(branchStr)
+
+	checksStr := prRowChecks(pr.StatusRollup, bgKey)
+	checksW := lipgloss.Width(checksStr)
+
+	const (
+		sepW     = 5 // "  ·  "
+		branchGap = 2
+	)
+	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+
+	// Author takes ~30% of the content area; labels fill the rest.
+	contentW := width - lineIndent - branchGap - branchW - 1
+	if contentW < 20 {
+		contentW = 20
+	}
+	authorMax := contentW * 30 / 100
+	if authorMax < 8 {
+		authorMax = 8
+	}
+	authorStr := authorStyle.Render(truncate("@"+pr.Author.Login, authorMax))
+	authorActualW := lipgloss.Width(authorStr)
+
+	labelBudget := contentW - authorActualW - sepW
+	if checksStr != "" {
+		labelBudget -= checksW + sepW
+	}
+	if labelBudget < 0 {
+		labelBudget = 0
+	}
+	labelStr := issueRowLabels(pr.Labels, bgKey, labelBudget)
+
+	// Reuse accent on line 2 so the bar spans both rows.
+	indent2 := accent + base.Render(strings.Repeat(" ", lineIndent-2))
+
+	line2LeftW := lineIndent + authorActualW
+	if checksStr != "" {
+		line2LeftW += sepW + checksW
+	}
+	if labelStr != "" {
+		line2LeftW += sepW + lipgloss.Width(labelStr)
+	}
+	line2FillW := width - line2LeftW - branchW - 1
+	if line2FillW < branchGap {
+		line2FillW = branchGap
+	}
+	line2Fill := base.Render(strings.Repeat(" ", line2FillW))
+
+	line2 := indent2 + authorStr
+	if checksStr != "" {
+		line2 += dimSep + checksStr
+	}
+	if labelStr != "" {
+		line2 += dimSep + labelStr
+	}
+	line2 += line2Fill + branchStr + base.Render(" ")
+
+	fmt.Fprintf(w, "%s\n%s", line1, line2)
 }
 
 // prRowChecks returns a compact colored check-status symbol for a list row.
