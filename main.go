@@ -2,15 +2,21 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
+	"strings"
 
 	"hubcap/internal/github"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const version = "0.1.0"
+//go:embed VERSION
+var versionRaw string
+
+// version is the trimmed contents of the VERSION file, embedded at build time.
+var version = strings.TrimSpace(versionRaw)
 
 type TabID int
 

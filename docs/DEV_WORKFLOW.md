@@ -590,23 +590,29 @@ git pull origin dev
 # - Breaking changes → MAJOR bump (1.0.0 → 2.0.0)
 git log --oneline origin/main..origin/dev
 
-# ✅ Step 3: Create version tag (REQUIRED - DO NOT SKIP!)
+# ✅ Step 3: Update VERSION file (REQUIRED - this is what the binary reads!)
+echo "1.0.0" > VERSION   # replace with actual new version
+git add VERSION
+git commit -m "chore: bump version to v1.0.0"
+git push origin dev
+
+# ✅ Step 4: Create version tag (REQUIRED - DO NOT SKIP!)
 git tag -a v1.0.0 -m "Release v1.0.0"
 # Examples:
 # git tag -a v1.0.1 -m "Release v1.0.1"  # PATCH
 # git tag -a v1.1.0 -m "Release v1.1.0"  # MINOR
 # git tag -a v2.0.0 -m "Release v2.0.0"  # MAJOR
 
-# ✅ Step 4: Push tags
+# ✅ Step 5: Push tags
 git push origin v1.0.0
 
-# ✅ Step 5: Create PR to main for production deployment
+# ✅ Step 6: Create PR to main for production deployment
 gh pr create --base main --head dev --fill
 
-# ✅ Step 6: Wait for PR approval and merge
+# ✅ Step 7: Wait for PR approval and merge
 gh pr view <PR-number> --json state,mergedAt
 
-# ✅ Step 7: IMMEDIATELY after merge - Sync dev with main
+# ✅ Step 8: IMMEDIATELY after merge - Sync dev with main
 # ⚠️  REQUIRED — skipping this causes conflicts on the next release
 git checkout dev
 git pull origin dev
