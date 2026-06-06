@@ -232,15 +232,11 @@ func (m *DashboardModel) moveCursorBottom() {
 	}
 }
 
-// DashCounts holds per-section counts for display in the header filter bar
-// and the navigation tab badges.
+// DashCounts holds per-section counts for display in the header filter bar.
 type DashCounts struct {
 	ReviewRequests int
 	MyPRs          int
 	Assigned       int
-	// Tab badge counts — set by AppModel before passing to headerView.
-	IssueListCount int
-	PRListCount    int
 }
 
 func (m DashboardModel) Counts() DashCounts {
