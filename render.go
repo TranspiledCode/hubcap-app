@@ -458,39 +458,38 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	}
 	typeStr := dimDot + mutedSt.Render("Type: ") + authorSt.Render(typeVal)
 
-	// Collapsed: show only the single highest-priority label + dim "+N more".
-	// Expanded: show every label with no cap.
-	var pillsStr string
-	if len(issue.Labels) > 0 {
-		var shown []github.Label
-		overflow := 0
-		if expanded {
-			shown = issue.Labels
-		} else {
-			// Pick the label with the lowest labelPriority value (= most important).
-			best := 0
-			for i := 1; i < len(issue.Labels); i++ {
-				if labelPriority(issue.Labels[i].Name) < labelPriority(issue.Labels[best].Name) {
-					best = i
-				}
-			}
-			shown = issue.Labels[best : best+1]
-			overflow = len(issue.Labels) - 1
+	// Collapsed: single highest-priority pill right-aligned on row 2.
+	// Expanded: pills move to their own dedicated row 6 (row 2 stays clean).
+	buildPills := func(labels []github.Label) string {
+		if len(labels) == 0 {
+			return ""
 		}
-		pills := make([]string, len(shown))
-		for i, l := range shown {
+		pills := make([]string, len(labels))
+		for i, l := range labels {
 			pills[i] = labelPill(bg, l.Name)
 		}
-		pillsStr = strings.Join(pills, "")
-		if overflow > 0 {
-			pillsStr += s.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+		return strings.Join(pills, "") + s.Render("  ")
+	}
+
+	var collapsedPill string // right side of row2 in collapsed mode
+	if !expanded && len(issue.Labels) > 0 {
+		best := 0
+		for i := 1; i < len(issue.Labels); i++ {
+			if labelPriority(issue.Labels[i].Name) < labelPriority(issue.Labels[best].Name) {
+				best = i
+			}
 		}
-		pillsStr += s.Render("  ")
+		overflow := len(issue.Labels) - 1
+		collapsedPill = labelPill(bg, issue.Labels[best].Name)
+		if overflow > 0 {
+			collapsedPill += s.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+		}
+		collapsedPill += s.Render("  ")
 	}
 
 	leftW := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr)
-	pillsW := lipgloss.Width(pillsStr)
-	row2 := assigneeStr + typeStr + fill(width-leftW-pillsW) + pillsStr
+	pillW := lipgloss.Width(collapsedPill)
+	row2 := assigneeStr + typeStr + fill(width-leftW-pillW) + collapsedPill
 
 	// ── Separator (last line either way) ─────────────────────────────────────
 	sepLine := metaSepLine(width)
@@ -499,7 +498,8 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
 	}
 
-	// ── Expanded lines 5–6 ────────────────────────────────────────────────────
+	// ── Expanded lines 5–7 ────────────────────────────────────────────────────
+	// Row 5: Author · Created
 	authorVal := "—"
 	if issue.Author.Login != "" {
 		authorVal = "@" + issue.Author.Login
@@ -512,9 +512,12 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
 	row3 := authorStr + createdStr + fill(width-lipgloss.Width(authorStr)-lipgloss.Width(createdStr))
 
-	expandGap := fill(width)
+	// Row 6: all label pills on their own line
+	allPills := buildPills(issue.Labels)
+	allPillsW := lipgloss.Width(allPills)
+	row4 := s.Render("  ") + allPills + fill(width-2-allPillsW)
 
-	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + row3 + "\n" + expandGap + "\n" + sepLine + "\n"
+	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + row3 + "\n" + row4 + "\n" + sepLine + "\n"
 }
 
 // renderPRMetaStrip renders the fixed 5-line metadata strip shown above the
