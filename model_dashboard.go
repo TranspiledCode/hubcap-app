@@ -320,8 +320,10 @@ func (m DashboardModel) View() string {
 	}
 
 	// ── renderRow ─────────────────────────────────────────────────────────────
-	// Renders a single item row. icon is the type+state symbol (pre-colored).
-	renderRow := func(selected bool, icon, title, rightStr string, number int) string {
+	// Renders a two-row item matching the Issues list style.
+	// Line 1: [accent] icon  #N  Title…(fill)…  timestamp
+	// Line 2: [accent]           line2content
+	renderRow := func(selected bool, icon, title, tsStr, line2content string, number int) string {
 		var base lipgloss.Style
 		if selected {
 			base = lipgloss.NewStyle().Background(selectedBg)
@@ -329,6 +331,7 @@ func (m DashboardModel) View() string {
 			base = lipgloss.NewStyle()
 		}
 
+		// Accent bar — reused on both rows so it spans the full item height.
 		var accent string
 		if selected {
 			accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
@@ -343,28 +346,35 @@ func (m DashboardModel) View() string {
 		}
 		numStr := numStyle.Render(fmt.Sprintf(" #%-4d", number))
 
-		rightW := lipgloss.Width(rightStr)
-		// fixed = accent(2) + icon(1) + "  "(2) + numStr + sp(1) + gap(2) + right + pad(1)
-		fixed := 2 + 1 + 2 + lipgloss.Width(numStr) + 1 + 2 + rightW + 1
-		titleW := width - fixed
-		if titleW < 10 {
-			titleW = 10
+		tsW := lipgloss.Width(tsStr)
+
+		// left prefix = accent(2) + icon(1) + "  "(2) + numStr(6) + sp(1) = 12
+		const prefixW = 12
+		titleMaxW := width - prefixW - 2 - tsW - 1
+		if titleMaxW < 10 {
+			titleMaxW = 10
 		}
 
 		titleStyle := base.Foreground(lipgloss.Color("252"))
 		if selected {
 			titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
 		}
-		titleStr := titleStyle.Render(truncate(cleanLine(title), titleW))
+		titleStr := titleStyle.Render(truncate(cleanLine(title), titleMaxW))
 		titleActualW := lipgloss.Width(titleStr)
 
-		fillW := width - 2 - 1 - 2 - lipgloss.Width(numStr) - 1 - titleActualW - 2 - rightW - 1
-		if fillW < 0 {
-			fillW = 0
+		fillW := width - prefixW - titleActualW - tsW - 1
+		if fillW < 1 {
+			fillW = 1
 		}
 		fill := base.Render(strings.Repeat(" ", fillW))
 
-		return accent + icon + "  " + numStr + " " + titleStr + fill + "  " + rightStr + base.Render(" ")
+		line1 := accent + icon + "  " + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
+
+		// Line 2: accent + indent matching prefixW + line2content.
+		indent2 := accent + base.Render(strings.Repeat(" ", prefixW-2))
+		line2 := indent2 + line2content + base.Render(" ")
+
+		return line1 + "\n" + line2
 	}
 
 	// halfSpace is a blank line that blends with the body background, used as
@@ -392,37 +402,49 @@ func (m DashboardModel) View() string {
 		switch row.sectionID {
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
-			rightStr := mutedStyle.Render("by "+truncate(p.Author.Login, 14)) +
-				"  " + summarizeChecks(p.StatusRollup)
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, rightStr, p.Number) + "\n")
+			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
+			line2 := mutedStyle.Render("@"+truncate(p.Author.Login, 14)) +
+				mutedStyle.Render("  ·  ") + summarizeChecks(p.StatusRollup)
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
 
 		case secMyPRs:
 			p := m.data.myPRs[row.itemIdx]
-			var branchStr string
+			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
+			var line2 string
 			if p.HeadRefName != "" && p.BaseRefName != "" {
-				branchStr = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(truncate(p.HeadRefName, 18)) +
+				line2 = mutedStyle.Render(truncate(p.HeadRefName, 18)) +
 					lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(" → ") +
-					lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(truncate(p.BaseRefName, 12))
+					mutedStyle.Render(truncate(p.BaseRefName, 12))
 			} else if p.IsDraft {
-				branchStr = mutedStyle.Render("draft")
+				line2 = mutedStyle.Render("draft")
 			}
-			checks := summarizeChecks(p.StatusRollup)
-			var rightStr string
-			if branchStr != "" {
-				rightStr = branchStr + "  " + checks
-			} else {
-				rightStr = checks
+			if checks := summarizeChecks(p.StatusRollup); checks != "" {
+				if line2 != "" {
+					line2 += mutedStyle.Render("  ·  ") + checks
+				} else {
+					line2 = checks
+				}
 			}
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, rightStr, p.Number) + "\n")
+			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
 
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			labelMax := width * 30 / 100
+			ts := mutedStyle.Render(timeAgo(iss.CreatedAt))
+			labelMax := width * 40 / 100
 			if labelMax < 15 {
 				labelMax = 15
 			}
-			rightStr := issueRowLabels(iss.Labels, "", labelMax)
-			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, rightStr, iss.Number) + "\n")
+			var assigneeText string
+			if len(iss.Assignees) > 0 {
+				assigneeText = "@" + joinUsers(iss.Assignees)
+			} else {
+				assigneeText = "unassigned"
+			}
+			line2 := mutedStyle.Render(truncate(assigneeText, 20))
+			if labels := issueRowLabels(iss.Labels, "", labelMax); labels != "" {
+				line2 += mutedStyle.Render("  ·  ") + labels
+			}
+			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, ts, line2, iss.Number) + "\n")
 		}
 	}
 
