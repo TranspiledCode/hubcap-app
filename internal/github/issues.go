@@ -96,10 +96,18 @@ func FetchIssues(filters Filters) ([]Issue, error) {
 
 	states := gqlStateFilter(filters.State)
 
+	// Resolve "@me" to the actual login — GraphQL filterBy does not accept it.
+	assignee := filters.Assignee
+	if assignee == "@me" {
+		if login, err := GetCurrentUser(); err == nil && login != "" {
+			assignee = login
+		}
+	}
+
 	// Build inline filterBy — values come from our own form so no injection risk.
 	fb := fmt.Sprintf("states:[%s]", states)
-	if filters.Assignee != "" {
-		fb += fmt.Sprintf(`, assignee:"%s"`, filters.Assignee)
+	if assignee != "" {
+		fb += fmt.Sprintf(`, assignee:"%s"`, assignee)
 	}
 	if filters.Label != "" {
 		fb += fmt.Sprintf(`, labels:["%s"]`, filters.Label)
