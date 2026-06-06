@@ -392,13 +392,20 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 	// ── Line 3: blank gap ────────────────────────────────────────────────────
 	thinGap := fill(width)
 
-	// ── Line 4: Assignee: name (left)  ···  label pills (right) ─────────────
+	// ── Line 4: Assignee: name  ·  Type: name (left)  ···  label pills (right)
 	var assigneeStr string
 	if len(issue.Assignees) > 0 {
 		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + authorSt.Render(joinUsers(issue.Assignees))
 	} else {
 		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + mutedSt.Render("—")
 	}
+
+	dimDot := s.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	typeVal := issue.IssueType
+	if typeVal == "" {
+		typeVal = "—"
+	}
+	typeStr := dimDot + mutedSt.Render("Type: ") + authorSt.Render(typeVal)
 
 	var pillsStr string
 	if len(issue.Labels) > 0 {
@@ -409,9 +416,9 @@ func renderIssueMetaStrip(issue github.Issue, width int) string {
 		pillsStr = strings.Join(pills, "") + s.Render("  ")
 	}
 
-	assigneeW := lipgloss.Width(assigneeStr)
+	leftW := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr)
 	pillsW := lipgloss.Width(pillsStr)
-	row2 := assigneeStr + fill(width-assigneeW-pillsW) + pillsStr
+	row2 := assigneeStr + typeStr + fill(width-leftW-pillsW) + pillsStr
 
 	// ── Line 5: separator ────────────────────────────────────────────────────
 	sepLine := lipgloss.NewStyle().
