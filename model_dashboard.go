@@ -441,8 +441,18 @@ func (m DashboardModel) View() string {
 				assigneeText = "unassigned"
 			}
 			line2 := mutedStyle.Render(truncate(assigneeText, 20))
-			if labels := issueRowLabels(iss.Labels, "", labelMax); labels != "" {
+			const dashMaxLabels = 3
+			shownLabels := iss.Labels
+			labelOverflow := 0
+			if len(iss.Labels) > dashMaxLabels {
+				shownLabels = iss.Labels[:dashMaxLabels]
+				labelOverflow = len(iss.Labels) - dashMaxLabels
+			}
+			if labels := issueRowLabels(shownLabels, "", labelMax); labels != "" {
 				line2 += mutedStyle.Render("  ·  ") + labels
+				if labelOverflow > 0 {
+					line2 += mutedStyle.Render(fmt.Sprintf(" +%d", labelOverflow))
+				}
 			}
 			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, ts, line2, iss.Number) + "\n")
 		}
