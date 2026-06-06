@@ -45,7 +45,7 @@ brews:
       owner: TranspiledCode
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    folder: Formula
+    directory: Formula
     homepage: "https://github.com/TranspiledCode/hubcap-app"
     description: "GitHub in your terminal — browse issues and PRs, check CI, merge, and act with keyboard shortcuts"
     license: "MIT"
