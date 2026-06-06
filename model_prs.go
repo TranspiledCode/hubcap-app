@@ -675,14 +675,11 @@ func (m PRsModel) View() string {
 }
 
 // renderPRDetailContent builds scrollable body-only content for the viewport.
-func renderPRDetailContent(pr github.PullRequest, _ int) string {
-	var b strings.Builder
-	if pr.Body != "" {
-		b.WriteString(pr.Body + "\n")
-	} else {
-		b.WriteString(styleGray.Render("No description.") + "\n")
+func renderPRDetailContent(pr github.PullRequest, width int) string {
+	if pr.Body == "" {
+		return styleGray.Render("No description.") + "\n"
 	}
-	return b.String()
+	return renderMarkdown(pr.Body, width-4)
 }
 
 // renderPRDetailView renders the scrollable viewport only.
