@@ -349,7 +349,11 @@ func metaSepLine(width int) string {
 
 // viewportWithScrollHint overlays a light-grey "↓ N%" badge at the
 // bottom-right corner of the viewport when there is more content to scroll.
-// It sits on the last visible line so no height change occurs.
+//
+// The viewport pads every line to vp.Width with spaces, so we can't simply
+// append the badge (that would push the line past vp.Width and cause the
+// terminal to wrap it onto a new row). Instead we reconstruct the last line
+// as (vp.Width - badgeW) spaces + badge, keeping the total exactly vp.Width.
 func viewportWithScrollHint(vp viewport.Model) string {
 	view := vp.View()
 	if vp.AtBottom() {
@@ -364,17 +368,15 @@ func viewportWithScrollHint(vp viewport.Model) string {
 	badgeW := lipgloss.Width(badge)
 
 	lines := strings.Split(view, "\n")
-	// Use the very last line (the viewport always pads to its full height).
 	idx := len(lines) - 1
 	if idx < 0 {
 		return view
 	}
-	lineW := lipgloss.Width(lines[idx])
-	padW := vp.Width - lineW - badgeW
-	if padW < 0 {
-		padW = 0
+	spaceW := vp.Width - badgeW
+	if spaceW < 0 {
+		spaceW = 0
 	}
-	lines[idx] = lines[idx] + strings.Repeat(" ", padW) + badge
+	lines[idx] = strings.Repeat(" ", spaceW) + badge
 	return strings.Join(lines, "\n")
 }
 
