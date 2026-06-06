@@ -170,9 +170,9 @@ const (
 	metaStripHeight = 5
 
 	// metaStripExpandedHeight is the line count when the meta strip is expanded.
-	// spacer(1) + title(1) + thinGap(1) + assignee/type(1) + halfGap(1)
-	// + author/created(1) + halfGap(1) + labels(1) + separator(1) = 9
-	metaStripExpandedHeight = 9
+	// spacer(1) + title(1) + thinGap(1) + assignee/type/author/created(1)
+	// + halfGap(1) + labels(1) + halfGap(1) + separator(1) = 8
+	metaStripExpandedHeight = 8
 )
 
 // headerView returns the header as a string for use in bubbletea View() functions.
@@ -526,10 +526,10 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
 	}
 
-	// ── Expanded lines 5–9 ────────────────────────────────────────────────────
-	halfGap := fill(width) // blank spacing line between sections
+	// ── Expanded lines 5–8 ────────────────────────────────────────────────────
+	halfGap := fill(width)
 
-	// Row 6: Author · Created
+	// Row 4 (expanded): append Author · Created onto the Assignee/Type row
 	authorVal := "—"
 	if issue.Author.Login != "" {
 		authorVal = "@" + issue.Author.Login
@@ -538,17 +538,18 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	if createdVal == "" {
 		createdVal = "—"
 	}
-	authorStr := s.Render("  ") + mutedSt.Render("Author: ") + authorSt.Render(authorVal)
+	authorStr := dimDot + mutedSt.Render("Author: ") + authorSt.Render(authorVal)
 	createdStr := dimDot + mutedSt.Render("Created: ") + authorSt.Render(createdVal)
-	row3 := authorStr + createdStr + fill(width-lipgloss.Width(authorStr)-lipgloss.Width(createdStr))
+	row2meta := lipgloss.Width(assigneeStr) + lipgloss.Width(typeStr) + lipgloss.Width(authorStr) + lipgloss.Width(createdStr) + lipgloss.Width(collapsedPill)
+	row2 = assigneeStr + typeStr + authorStr + createdStr + fill(width-row2meta) + collapsedPill
 
-	// Row 8: label pills with single leading space
+	// Row 6: label pills with single leading space
 	allPills := buildPills(issue.Labels)
 	allPillsW := lipgloss.Width(allPills)
 	row4 := " " + allPills + fill(width-1-allPillsW)
 
-	// spacer + title + thinGap + row2 + halfGap + row3 + halfGap + row4 + sep = 9 lines
-	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + halfGap + "\n" + row3 + "\n" + halfGap + "\n" + row4 + "\n" + sepLine + "\n"
+	// spacer + title + thinGap + row2 + halfGap + row4 + halfGap + sep = 8 lines
+	return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + halfGap + "\n" + row4 + "\n" + halfGap + "\n" + sepLine + "\n"
 }
 
 // renderPRMetaStrip renders the fixed 5-line metadata strip shown above the
