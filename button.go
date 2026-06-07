@@ -98,8 +98,8 @@ func NewKeyButton(key, desc string, color lipgloss.Color) KeyButton {
 //	                              │ a │  assign
 //	                              ╰───╯
 func (b KeyButton) Render(theme UITheme) string {
-	bg     := themeBg(theme)
-	keySt  := lipgloss.NewStyle().Foreground(b.Color).Background(bg).Bold(true)
+	bg := themeBg(theme)
+	keySt := lipgloss.NewStyle().Foreground(b.Color).Background(bg).Bold(true)
 	descSt := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Background(bg)
 
 	switch theme {
@@ -148,7 +148,7 @@ func (b KeyButton) Render(theme UITheme) string {
 func singleRowBar(width int, theme UITheme, buttons ...KeyButton) string {
 	bgSt := lipgloss.NewStyle().Background(themeBg(theme))
 	edge := bgSt.Render("  ")
-	gap  := bgSt.Render("   ")
+	gap := bgSt.Render("   ")
 
 	var sb strings.Builder
 	sb.WriteString(edge)
@@ -181,7 +181,7 @@ func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
 		// matches the button height — a 1-row spacer would leave transparent
 		// rows above and below when joined alongside the 3-row buttons.
 		edge := bgSt.Width(2).Height(3).Render("")
-		gap  := bgSt.Width(3).Height(3).Render("")
+		gap := bgSt.Width(3).Height(3).Render("")
 		parts := make([]string, 0, len(buttons)*2+2)
 		parts = append(parts, edge)
 		for i, btn := range buttons {
@@ -231,7 +231,7 @@ func CenterInFooterBar(content string, width int, theme UITheme) string {
 		return content
 	}
 	// Comfortable: separator + 3-row block to match RenderFooterBar height.
-	sep   := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Background(themeBg(theme)).Render(strings.Repeat("─", width))
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Background(themeBg(theme)).Render(strings.Repeat("─", width))
 	blank := bgSt.Width(width).Render("")
 	return sep + "\n" + blank + "\n" + content + "\n" + blank
 }

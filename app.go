@@ -582,24 +582,24 @@ func quitConfirmFooter(width int, theme UITheme) string {
 
 // footerPendingToast renders a "working…" indicator in the footer.
 func footerPendingToast(spinnerView string, msg string, width int, theme UITheme) string {
-	bgSt   := lipgloss.NewStyle().Background(footerBg)
+	bgSt := lipgloss.NewStyle().Background(footerBg)
 	spinSt := lipgloss.NewStyle().Background(footerBg).Foreground(ColorAction)
-	txtSt  := lipgloss.NewStyle().Background(footerBg).Foreground(lipgloss.Color("244"))
-	line   := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
+	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(lipgloss.Color("244"))
+	line := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
 	return CenterInFooterBar(line, width, theme)
 }
 
 // footerToast renders a success / error toast notification.
 func footerToast(msg string, isErr bool, width int, theme UITheme) string {
-	fg   := ColorAction // green
+	fg := ColorAction // green
 	icon := "✓"
 	if isErr {
-		fg   = ColorDanger // red
+		fg = ColorDanger // red
 		icon = "✗"
 	}
-	bgSt  := lipgloss.NewStyle().Background(footerBg)
+	bgSt := lipgloss.NewStyle().Background(footerBg)
 	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(fg).Bold(true)
-	line  := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
+	line := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
 	return CenterInFooterBar(line, width, theme)
 }
 
@@ -752,11 +752,11 @@ func footerView(m AppModel, width int, theme UITheme) string {
 // keyboard shortcut in the application, organised by section.
 // contentW is the available visual width for line-length purposes.
 func buildHelpContent(contentW int) string {
-	titleStyle   := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-	keyStyle     := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	descStyle    := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	dimStyle     := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
 	// keyColW reserves enough space for the widest badge "[shift+tab]" (11
 	// visible chars) plus a comfortable gap before the description.
@@ -789,10 +789,10 @@ func buildHelpContent(contentW int) string {
 
 	// ── General ───────────────────────────────────────────────────────────
 	buf.WriteString(sec("General"))
-	buf.WriteString(line(keys.Tab,      "switch to next tab") + "\n")
+	buf.WriteString(line(keys.Tab, "switch to next tab") + "\n")
 	buf.WriteString(line(keys.ShiftTab, "switch to previous tab") + "\n")
 	buf.WriteString("\n")
-	buf.WriteString(line(keys.Config,  "open settings") + "\n")
+	buf.WriteString(line(keys.Config, "open settings") + "\n")
 	buf.WriteString(line(keys.Refresh, "refresh current view") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Help, "open / close this screen") + "\n")
@@ -800,49 +800,49 @@ func buildHelpContent(contentW int) string {
 
 	// ── Browse (list view) ────────────────────────────────────────────────
 	buf.WriteString(sec("Browse"))
-	buf.WriteString(line(keys.Up,     "navigate up / down") + "\n")
-	buf.WriteString(line(keys.Top,    "jump to top") + "\n")
+	buf.WriteString(line(keys.Up, "navigate up / down") + "\n")
+	buf.WriteString(line(keys.Top, "jump to top") + "\n")
 	buf.WriteString(line(keys.Bottom, "jump to bottom") + "\n")
 	buf.WriteString("\n")
-	buf.WriteString(line(keys.Open,    "open item") + "\n")
+	buf.WriteString(line(keys.Open, "open item") + "\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.Filters, "filter list") + "\n")
 
 	// ── Issues list ───────────────────────────────────────────────────────
 	buf.WriteString(sec("Issues — List"))
-	buf.WriteString(line(keys.New,        "create new issue") + "\n")
+	buf.WriteString(line(keys.New, "create new issue") + "\n")
 	buf.WriteString(line(keys.IssueAssign, "grab (unassigned) / take (from someone) / drop (yourself)") + "\n")
 
 	// ── Issue detail ──────────────────────────────────────────────────────
 	buf.WriteString(sec("Issues — Detail"))
 	buf.WriteString(line(keys.IssueDevelop, "create a branch for this issue") + "\n")
-	buf.WriteString(line(keys.IssuePR,      "create a pull request") + "\n")
-	buf.WriteString(line(keys.IssueClose,   "close / reopen issue") + "\n")
-	buf.WriteString(line(keys.IssueAssign,  "assign / unassign @me") + "\n")
-	buf.WriteString(line(keys.IssueLabel,   "add label") + "\n")
+	buf.WriteString(line(keys.IssuePR, "create a pull request") + "\n")
+	buf.WriteString(line(keys.IssueClose, "close / reopen issue") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "assign / unassign @me") + "\n")
+	buf.WriteString(line(keys.IssueLabel, "add label") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Refresh, "refresh issue") + "\n")
-	buf.WriteString(line(keys.Back,    "back to list") + "\n")
+	buf.WriteString(line(keys.Back, "back to list") + "\n")
 
 	// ── Pull requests list ────────────────────────────────────────────────
 	buf.WriteString(sec("Pull Requests — List"))
-	buf.WriteString(line(keys.New,     "create new pull request") + "\n")
+	buf.WriteString(line(keys.New, "create new pull request") + "\n")
 	buf.WriteString(line(keys.Browser, "open selected PR in browser") + "\n")
 
 	// ── Pull request detail ───────────────────────────────────────────────
 	buf.WriteString(sec("Pull Requests — Detail"))
 	buf.WriteString(line(keys.PRCheckout, "checkout branch locally") + "\n")
-	buf.WriteString(line(keys.PRMerge,    "merge pull request") + "\n")
-	buf.WriteString(line(keys.PRClose,    "close / reopen pull request") + "\n")
+	buf.WriteString(line(keys.PRMerge, "merge pull request") + "\n")
+	buf.WriteString(line(keys.PRClose, "close / reopen pull request") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Refresh, "refresh PR") + "\n")
-	buf.WriteString(line(keys.Back,    "back to list") + "\n")
+	buf.WriteString(line(keys.Back, "back to list") + "\n")
 
 	buf.WriteString("\n")
 	return buf.String()
