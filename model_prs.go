@@ -30,6 +30,20 @@ type prActionErrMsg struct {
 	err error
 }
 
+// prContentRenderedMsg is sent by renderPRContentCmd when the viewport body
+// has been rendered off the Update loop.
+type prContentRenderedMsg struct {
+	content string
+}
+
+// renderPRContentCmd renders PR detail content in a goroutine so the heavy
+// glamour call never blocks the BubbleTea Update loop.
+func renderPRContentCmd(pr github.PullRequest, width int) tea.Cmd {
+	return func() tea.Msg {
+		return prContentRenderedMsg{content: renderPRDetailContent(pr, width)}
+	}
+}
+
 // clearPRActionMsgMsg is sent by a timer to dismiss the toast notification.
 type clearPRActionMsgMsg struct{}
 
@@ -206,7 +220,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	checksW := lipgloss.Width(checksStr)
 
 	const (
-		sepW     = 5 // "  ·  "
+		sepW      = 5 // "  ·  "
 		branchGap = 2
 	)
 	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
@@ -327,7 +341,6 @@ type PRsModel struct {
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
-
 }
 
 func newPRsModel(filters github.PRFilters) PRsModel {
@@ -472,10 +485,14 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailPR = msg.pr
-		content := renderPRDetailContent(msg.pr, m.width)
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-		m.detail.SetContent(content)
+		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
 		m.showDetail = true
+		return m, renderPRContentCmd(msg.pr, m.width)
+
+	case prContentRenderedMsg:
+		m.detail.SetContent(msg.content)
+		return m, nil
 
 	case silentPRListRefreshMsg:
 		if msg.err == nil {
