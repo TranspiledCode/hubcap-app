@@ -180,7 +180,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	fill := base.Render(strings.Repeat(" ", fillW))
 
 	// Line 1: accent + dot + number + title + fill + timestamp
-	line1 := accent + dot + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
+	line1 := accent + dot + numStr + base.Render(" ") + titleStr + fill + tsStr + base.Render(" ")
 
 	// ── Line 2 ──────────────────────────────────────────────────────────────
 	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10

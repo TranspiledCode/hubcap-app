@@ -271,29 +271,21 @@ func (m DashboardModel) View() string {
 	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
 	countStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true)
 	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
-	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	// stateIcon returns the type icon colored by state.
 	// ⚑ = issue (flag), ⤴ = PR (upward arrow). Color = state.
-	issueIcon := func(state string) string {
-		color := lipgloss.Color("83") // green = open
-		if strings.EqualFold(state, "closed") {
-			color = lipgloss.Color("196") // red = closed
-		}
-		return lipgloss.NewStyle().Foreground(color).Bold(true).Render("⚑")
-	}
-	prIcon := func(state string, isDraft bool) string {
-		var color lipgloss.Color
+	// These are kept as named color lookups; actual rendering now happens
+	// inside the render loop with the row's base style (so selectedBg applies).
+	prIconColor := func(state string, isDraft bool) lipgloss.Color {
 		switch {
 		case isDraft:
-			color = lipgloss.Color("214") // amber = draft
+			return lipgloss.Color("214") // amber = draft
 		case strings.EqualFold(state, "merged"):
-			color = lipgloss.Color("141") // purple = merged
+			return lipgloss.Color("141") // purple = merged
 		case strings.EqualFold(state, "closed"):
-			color = lipgloss.Color("196") // red = closed
+			return lipgloss.Color("196") // red = closed
 		default:
-			color = lipgloss.Color("83") // green = open
+			return lipgloss.Color("83") // green = open
 		}
-		return lipgloss.NewStyle().Foreground(color).Bold(true).Render("⤴")
 	}
 
 	sectionIcons := [3]string{"⟳", "⎇", "●"}
@@ -310,7 +302,7 @@ func (m DashboardModel) View() string {
 		name := sectionNames[sectionID]
 		count := sectionCounts[sectionID]
 
-		left := "  " + icon + "  " + nameStyle.Render(name) + "  "
+		left := icon + "  " + nameStyle.Render(name) + "  "
 		right := "  " + countStyle.Render(fmt.Sprintf("%d", count))
 		ruleW := width - lipgloss.Width(left) - lipgloss.Width(right)
 		if ruleW < 1 {
@@ -320,17 +312,11 @@ func (m DashboardModel) View() string {
 	}
 
 	// ── renderRow ─────────────────────────────────────────────────────────────
-	// Renders a two-row item matching the Issues list style.
+	// Renders a two-row item. base must be pre-computed by the caller (with or
+	// without Background(selectedBg)) so every piece uses the same background.
 	// Line 1: [accent] icon  #N  Title…(fill)…  timestamp
-	// Line 2: [accent]           line2content
-	renderRow := func(selected bool, icon, title, tsStr, line2content string, number int) string {
-		var base lipgloss.Style
-		if selected {
-			base = lipgloss.NewStyle().Background(selectedBg)
-		} else {
-			base = lipgloss.NewStyle()
-		}
-
+	// Line 2: [accent]           line2Left  (fill)  line2Right
+	renderRow := func(base lipgloss.Style, selected bool, icon, title, tsStr, line2Left, line2Right string, number int) string {
 		// Accent bar — reused on both rows so it spans the full item height.
 		var accent string
 		if selected {
@@ -348,8 +334,8 @@ func (m DashboardModel) View() string {
 
 		tsW := lipgloss.Width(tsStr)
 
-		// left prefix = accent(2) + icon(1) + "  "(2) + numStr(6) + sp(1) = 12
-		const prefixW = 12
+		// left prefix = accent(2) + icon(1) + numStr(6) + sp(1) = 10 — matches Issues delegate
+		const prefixW = 10
 		titleMaxW := width - prefixW - 2 - tsW - 1
 		if titleMaxW < 10 {
 			titleMaxW = 10
@@ -368,11 +354,19 @@ func (m DashboardModel) View() string {
 		}
 		fill := base.Render(strings.Repeat(" ", fillW))
 
-		line1 := accent + icon + "  " + numStr + " " + titleStr + fill + tsStr + base.Render(" ")
+		line1 := accent + icon + numStr + base.Render(" ") + titleStr + fill + tsStr + base.Render(" ")
 
-		// Line 2: accent + indent matching prefixW + line2content.
+		// Line 2: accent + indent + line2Left (fill) line2Right
 		indent2 := accent + base.Render(strings.Repeat(" ", prefixW-2))
-		line2 := indent2 + line2content + base.Render(" ")
+		line2RightW := lipgloss.Width(line2Right)
+		line2LeftW := prefixW + lipgloss.Width(line2Left)
+		const typeGap = 2
+		line2FillW := width - line2LeftW - line2RightW - 1
+		if line2FillW < typeGap {
+			line2FillW = typeGap
+		}
+		line2Fill := base.Render(strings.Repeat(" ", line2FillW))
+		line2 := indent2 + line2Left + line2Fill + line2Right + base.Render(" ")
 
 		return line1 + "\n" + line2
 	}
@@ -399,37 +393,60 @@ func (m DashboardModel) View() string {
 
 		selected := i == m.cursor
 
+		// Blank line between items — matches Issues delegate Spacing()=1.
+		if i > 0 && !m.rows[i-1].isHeader {
+			b.WriteString(halfSpace + "\n")
+		}
+
+		// base carries Background(selectedBg) on the selected row so every
+		// rendered segment — icon, timestamp, assignee, separator, type badge —
+		// shares the same background and there are no dark gaps.
+		var base lipgloss.Style
+		if selected {
+			base = lipgloss.NewStyle().Background(selectedBg)
+		} else {
+			base = lipgloss.NewStyle()
+		}
+		dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+
 		switch row.sectionID {
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
-			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
-			line2 := mutedStyle.Render("@"+truncate(p.Author.Login, 14)) +
-				mutedStyle.Render("  ·  ") + summarizeChecks(p.StatusRollup)
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
+			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
+			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(p.CreatedAt))
+			line2Left := base.Foreground(lipgloss.Color("244")).Render("@"+truncate(p.Author.Login, 14)) +
+				dimSep + summarizeChecks(p.StatusRollup)
+			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secMyPRs:
 			p := m.data.myPRs[row.itemIdx]
-			ts := mutedStyle.Render(timeAgo(p.CreatedAt))
-			var line2 string
+			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
+			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(p.CreatedAt))
+			var line2Left string
 			if p.HeadRefName != "" && p.BaseRefName != "" {
-				line2 = mutedStyle.Render(truncate(p.HeadRefName, 18)) +
-					lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(" → ") +
-					mutedStyle.Render(truncate(p.BaseRefName, 12))
+				line2Left = base.Foreground(lipgloss.Color("244")).Render(truncate(p.HeadRefName, 18)) +
+					base.Foreground(lipgloss.Color("252")).Render(" → ") +
+					base.Foreground(lipgloss.Color("244")).Render(truncate(p.BaseRefName, 12))
 			} else if p.IsDraft {
-				line2 = mutedStyle.Render("draft")
+				line2Left = base.Foreground(lipgloss.Color("244")).Render("draft")
 			}
 			if checks := summarizeChecks(p.StatusRollup); checks != "" {
-				if line2 != "" {
-					line2 += mutedStyle.Render("  ·  ") + checks
+				if line2Left != "" {
+					line2Left += dimSep + checks
 				} else {
-					line2 = checks
+					line2Left = checks
 				}
 			}
-			b.WriteString(renderRow(selected, prIcon(p.State, p.IsDraft), p.Title, ts, line2, p.Number) + "\n")
+			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			ts := mutedStyle.Render(timeAgo(iss.CreatedAt))
+			issIconColor := lipgloss.Color("83")
+			if strings.EqualFold(iss.State, "closed") {
+				issIconColor = lipgloss.Color("196")
+			}
+			icon := base.Foreground(issIconColor).Bold(true).Render("⚑")
+			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(iss.CreatedAt))
 			labelMax := width * 40 / 100
 			if labelMax < 15 {
 				labelMax = 15
@@ -440,7 +457,7 @@ func (m DashboardModel) View() string {
 			} else {
 				assigneeText = "unassigned"
 			}
-			line2 := mutedStyle.Render(truncate(assigneeText, 20))
+			line2Left := base.Foreground(lipgloss.Color("244")).Render(truncate(assigneeText, 20))
 			const dashMaxLabels = 3
 			shownLabels := iss.Labels
 			labelOverflow := 0
@@ -448,15 +465,26 @@ func (m DashboardModel) View() string {
 				shownLabels = iss.Labels[:dashMaxLabels]
 				labelOverflow = len(iss.Labels) - dashMaxLabels
 			}
-			if labels := issueRowLabels(shownLabels, "", labelMax); labels != "" {
-				line2 += mutedStyle.Render("  ·  ") + labels
+			var bgKey string
+			if selected {
+				bgKey = "235"
+			}
+			if labels := issueRowLabels(shownLabels, bgKey, labelMax); labels != "" {
+				line2Left += dimSep + labels
 				if labelOverflow > 0 {
-					line2 += mutedStyle.Render(fmt.Sprintf(" +%d", labelOverflow))
+					line2Left += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", labelOverflow))
 				}
 			}
-			b.WriteString(renderRow(selected, issueIcon(iss.State), iss.Title, ts, line2, iss.Number) + "\n")
+			// Type badge — always rendered (dim "—" when no type), matching Issues list.
+			var line2Right string
+			if iss.IssueType != "" {
+				line2Right = base.Foreground(lipgloss.Color("111")).Render(iss.IssueType)
+			} else {
+				line2Right = base.Foreground(lipgloss.Color("238")).Render("—")
+			}
+			b.WriteString(renderRow(base, selected, icon, iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
 		}
 	}
 
-	return b.String()
+	return lipgloss.NewStyle().Margin(0, 2).Render(b.String())
 }
