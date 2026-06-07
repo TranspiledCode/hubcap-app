@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
 	"hubcap/internal/github"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/bubbles/viewport"
 )
 
 // Lipgloss styles
@@ -1236,6 +1237,10 @@ func timeAgo(ts string) string {
 	}
 }
 
+// rendererCache caches glamour TermRenderers keyed by width so NewTermRenderer
+// (which is expensive) is only called once per terminal width.
+var rendererCache sync.Map // map[int]*glamour.TermRenderer
+
 // renderMarkdown renders a Markdown string to ANSI-styled terminal output
 // using glamour. width is the available content width for word wrapping.
 // Falls back to the raw string if glamour fails so the body is never blank.
@@ -1243,12 +1248,19 @@ func renderMarkdown(body string, width int) string {
 	if body == "" {
 		return ""
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		return body
+	var r *glamour.TermRenderer
+	if cached, ok := rendererCache.Load(width); ok {
+		r = cached.(*glamour.TermRenderer)
+	} else {
+		var err error
+		r, err = glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(width),
+		)
+		if err != nil {
+			return body
+		}
+		rendererCache.Store(width, r)
 	}
 	out, err := r.Render(body)
 	if err != nil {

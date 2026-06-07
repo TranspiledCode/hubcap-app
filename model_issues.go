@@ -31,6 +31,20 @@ type issueActionErrMsg struct {
 	err error
 }
 
+// issueContentRenderedMsg is sent by renderIssueContentCmd when the viewport
+// body has been rendered off the Update loop.
+type issueContentRenderedMsg struct {
+	content string
+}
+
+// renderIssueContentCmd renders issue detail content in a goroutine so the
+// heavy glamour call never blocks the BubbleTea Update loop.
+func renderIssueContentCmd(issue github.Issue, width int) tea.Cmd {
+	return func() tea.Msg {
+		return issueContentRenderedMsg{content: renderIssueDetailContent(issue, width)}
+	}
+}
+
 // clearIssueActionMsgMsg is sent by a timer to dismiss the toast notification.
 type clearIssueActionMsgMsg struct{}
 
@@ -510,10 +524,14 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailIssue = msg.issue
-		content := renderIssueDetailContent(msg.issue, m.width)
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-		m.detail.SetContent(content)
+		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
 		m.showDetail = true
+		return m, renderIssueContentCmd(msg.issue, m.width)
+
+	case issueContentRenderedMsg:
+		m.detail.SetContent(msg.content)
+		return m, nil
 
 	case silentIssueListRefreshMsg:
 		// Quietly update list items — no loading state change, no spinner.
