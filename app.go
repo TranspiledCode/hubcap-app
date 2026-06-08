@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -68,6 +69,22 @@ type autoRefreshTickMsg struct{}
 
 // timerTickMsg is sent every second to update the timer display
 type timerTickMsg struct{}
+
+// issuePrefetchedMsg carries a prefetched issue detail fetched in the
+// background while the user navigates the list. The gen field is compared
+// against IssuesModel.prefetchGen to discard stale results.
+type issuePrefetchedMsg struct {
+	number int
+	issue  github.Issue
+	gen    int
+}
+
+// prPrefetchedMsg is the PR equivalent of issuePrefetchedMsg.
+type prPrefetchedMsg struct {
+	number int
+	pr     github.PullRequest
+	gen    int
+}
 
 // dashboardData holds the three personal sections of the My Work dashboard.
 type dashboardData struct {
@@ -142,7 +159,7 @@ type AppModel struct {
 	currentUser string
 }
 
-func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters) AppModel {
+func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters, cache AppCache) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
@@ -150,8 +167,31 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 	theme := resolveTheme(cfg.UITheme)
 	issues := newIssuesModel(issueFilters)
 	issues.uiTheme = theme
+
+	// Seed issues list from cache for instant startup display.
+	if cachedIssues, ok := cache.GetIssues(); ok {
+		items := make([]list.Item, len(cachedIssues))
+		for i, issue := range cachedIssues {
+			items[i] = issueListItem{issue: issue}
+		}
+		issues.list.SetItems(items)
+		issues.loaded = true
+		issues.loading = false
+	}
+
 	prs := newPRsModel(prFilters)
 	prs.uiTheme = theme
+
+	// Seed PRs list from cache for instant startup display.
+	if cachedPRs, ok := cache.GetPRs(); ok {
+		items := make([]list.Item, len(cachedPRs))
+		for i, pr := range cachedPRs {
+			items[i] = prListItem{pr: pr}
+		}
+		prs.list.SetItems(items)
+		prs.loaded = true
+		prs.loading = false
+	}
 
 	helpVP := viewport.New(80, 20) // resized on first WindowSizeMsg / help open
 	helpVP.Style = lipgloss.NewStyle()
@@ -191,6 +231,19 @@ func (m AppModel) Init() tea.Cmd {
 		m.dashboard.fetchCmd(),
 		fetchCurrentUserCmd(),
 	}
+
+	// Parallel startup prefetch: fire Issues and PRs fetches immediately so
+	// switching tabs is instant. If the sub-model was seeded from cache
+	// (loaded=true, loading=false) this acts as a stale-while-revalidate
+	// background refresh; if not seeded, the spinner is shown.
+	cmds = append(cmds, m.issues.fetchCmd(), m.prs.fetchCmd())
+	if !m.issues.loaded {
+		cmds = append(cmds, m.issues.spinner.Tick)
+	}
+	if !m.prs.loaded {
+		cmds = append(cmds, m.prs.spinner.Tick)
+	}
+
 	// Start auto-refresh ticker if enabled
 	if m.cfg.AutoRefreshEnabled {
 		m.lastRefreshTime = time.Now().Unix()
@@ -231,6 +284,28 @@ func fetchFilterDataCmd(forPRs bool) tea.Cmd {
 			assignees: assignees,
 			labels:    labels,
 		}
+	}
+}
+
+// saveIssuesToCacheCmd returns a fire-and-forget Cmd that persists the issue
+// list to disk without blocking the UI.
+func saveIssuesToCacheCmd(issues []github.Issue) tea.Cmd {
+	return func() tea.Msg {
+		c := loadCache()
+		c.SetIssues(issues)
+		_ = saveCache(c)
+		return nil
+	}
+}
+
+// savePRsToCacheCmd returns a fire-and-forget Cmd that persists the PR list
+// to disk without blocking the UI.
+func savePRsToCacheCmd(prs []github.PullRequest) tea.Cmd {
+	return func() tea.Msg {
+		c := loadCache()
+		c.SetPRs(prs)
+		_ = saveCache(c)
+		return nil
 	}
 }
 
@@ -400,12 +475,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issues.filters = msg.filters
 		m.issues.loading = true
 		m.issues.loaded = false
+		m.cfg.IssueFilters = msg.filters
+		_ = saveConfig(m.cfg)
 		return m, tea.Batch(m.issues.fetchCmd(), m.issues.spinner.Tick)
 
 	case prFiltersUpdatedMsg:
 		m.prs.filters = msg.filters
 		m.prs.loading = true
 		m.prs.loaded = false
+		m.cfg.PRFilters = msg.filters
+		_ = saveConfig(m.cfg)
 		return m, tea.Batch(m.prs.fetchCmd(), m.prs.spinner.Tick)
 
 	case autoRefreshTickMsg:
@@ -494,12 +573,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeTab = msg.tab
 		switch msg.tab {
 		case TabIssues:
-			if !m.issues.loaded {
+			// Skip fetch if already loaded or a background fetch is in flight
+			// (parallel startup prefetch fires fetchCmd in Init).
+			if !m.issues.loaded && !m.issues.loading {
 				m.issues.loading = true
 				cmds = append(cmds, m.issues.fetchCmd(), m.issues.spinner.Tick)
 			}
 		case TabPRs:
-			if !m.prs.loaded {
+			// Same guard as TabIssues above.
+			if !m.prs.loaded && !m.prs.loading {
 				m.prs.loading = true
 				cmds = append(cmds, m.prs.fetchCmd(), m.prs.spinner.Tick)
 			}
@@ -536,6 +618,57 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
+
+	// ── Always-route messages ─────────────────────────────────────────────
+	// These messages must reach their target sub-model regardless of which tab
+	// is currently active. This supports:
+	//   • Parallel startup prefetch (issuesFetched / prsFetched fired in Init)
+	//   • Detail prefetching (prefetch goroutines complete after tab switch)
+	// We also save fresh list data to the disk cache here.
+
+	case issuesFetchedMsg:
+		updated, cmd := m.issues.Update(msg)
+		m.issues = updated
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if msg.err == nil {
+			cmds = append(cmds, saveIssuesToCacheCmd(msg.issues))
+		}
+		if wasInDetail != inDetailMode(m) {
+			cmds = append(cmds, tea.ClearScreen)
+		}
+		return m, tea.Batch(cmds...)
+
+	case prsFetchedMsg:
+		updated, cmd := m.prs.Update(msg)
+		m.prs = updated
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if msg.err == nil {
+			cmds = append(cmds, savePRsToCacheCmd(msg.prs))
+		}
+		if wasInDetail != inDetailMode(m) {
+			cmds = append(cmds, tea.ClearScreen)
+		}
+		return m, tea.Batch(cmds...)
+
+	case issuePrefetchedMsg:
+		updated, cmd := m.issues.Update(msg)
+		m.issues = updated
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case prPrefetchedMsg:
+		updated, cmd := m.prs.Update(msg)
+		m.prs = updated
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	// Delegate to active sub-model
