@@ -209,17 +209,17 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 
 // metaSepLine renders the full-width separator line shared by all meta strips.
 func metaSepLine(width int, pal Palette) string {
-	return lipgloss.NewStyle().Foreground(pal.TextMuted).Render(strings.Repeat("─", width))
+	return lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody).Render(strings.Repeat("─", width))
 }
 
 // issueSepLine renders the separator for the issue meta strip.
 // It embeds a centred [e] expand / [e] collapse shortcut hint so users can
 // discover the expand feature without it taking up a footer button slot.
 func issueSepLine(width int, expanded bool, pal Palette) string {
-	dashSt := lipgloss.NewStyle().Foreground(pal.TextMuted)
-	bracketSt := lipgloss.NewStyle().Foreground(pal.TextMuted)
-	keySt := lipgloss.NewStyle().Foreground(pal.Meta).Bold(true)
-	labelSt := lipgloss.NewStyle().Foreground(pal.Text)
+	dashSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	bracketSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	keySt := lipgloss.NewStyle().Foreground(pal.Meta).Bold(true).Background(pal.BgBody)
+	labelSt := lipgloss.NewStyle().Foreground(pal.Text).Background(pal.BgBody)
 
 	action := "expand"
 	if expanded {
@@ -268,7 +268,7 @@ func viewportWithScrollHint(vp viewport.Model, pal Palette) string {
 	if spaceW < 0 {
 		spaceW = 0
 	}
-	lines[idx] = strings.Repeat(" ", spaceW) + badge
+	lines[idx] = lipgloss.NewStyle().Background(pal.BgBody).Render(strings.Repeat(" ", spaceW)) + badge
 	return strings.Join(lines, "\n")
 }
 
@@ -291,8 +291,8 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, pal Pale
 	if width == 0 {
 		width = 80
 	}
-	bg := lipgloss.Color("") // transparent — matches the body background
-	s := lipgloss.NewStyle()
+	bg := pal.BgBody
+	s := lipgloss.NewStyle().Background(bg)
 	titleSt := s.Foreground(pal.Title).Bold(true)
 	numSt := s.Foreground(pal.Number).Bold(true)
 	authorSt := s.Foreground(pal.Text)
@@ -463,8 +463,8 @@ func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 	if width == 0 {
 		width = 80
 	}
-	bg := lipgloss.Color("") // transparent — matches the body background
-	s := lipgloss.NewStyle()
+	bg := pal.BgBody
+	s := lipgloss.NewStyle().Background(bg)
 	titleSt := s.Foreground(pal.Title).Bold(true)
 	numSt := s.Foreground(pal.Number).Bold(true)
 	mutedSt := s.Foreground(pal.TextMuted)

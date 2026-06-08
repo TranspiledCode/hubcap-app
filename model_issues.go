@@ -959,7 +959,7 @@ func (m IssuesModel) currentMetaHeight() int {
 // renderIssueDetailContent builds scrollable body-only content for the viewport.
 func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string {
 	if issue.Body == "" {
-		return lipgloss.NewStyle().Foreground(pal.TextDim).Render("No description.") + "\n"
+		return lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("No description.") + "\n"
 	}
 	return renderMarkdown(issue.Body, width-4)
 }
@@ -968,5 +968,5 @@ func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string
 // Action feedback (toast) is shown in the footer bar by AppModel so it never
 // changes the body height.
 func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error, pal Palette) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp, pal)) + "\n"
+	return lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal)) + "\n"
 }
