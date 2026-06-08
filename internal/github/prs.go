@@ -99,6 +99,16 @@ func RequestReview(number int, reviewer string) error {
 	return err
 }
 
+func AssignPRSelf(number int) error {
+	_, err := RunCommand("gh", "pr", "edit", strconv.Itoa(number), "--add-assignee", "@me")
+	return err
+}
+
+func UnassignPRSelf(number int) error {
+	_, err := RunCommand("gh", "pr", "edit", strconv.Itoa(number), "--remove-assignee", "@me")
+	return err
+}
+
 func FilterNonDraftPRs(prs []PullRequest) []PullRequest {
 	out := make([]PullRequest, 0, len(prs))
 	for _, pr := range prs {

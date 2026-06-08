@@ -21,9 +21,10 @@ import (
 // ── PR action messages ────────────────────────────────────────────────────────
 
 type prActionDoneMsg struct {
-	message    string
-	number     int  // PR to re-fetch after action (0 = don't re-fetch)
-	reloadList bool // refresh the full list (e.g. after creating a PR)
+	message       string
+	number        int  // PR to re-fetch after action (0 = don't re-fetch)
+	reloadList    bool // refresh the full list (e.g. after creating a PR)
+	silentRefresh bool // true → background-refresh the list without loading state
 }
 
 type prActionErrMsg struct {
@@ -391,6 +392,10 @@ type PRsModel struct {
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
 
+	// currentUser is the authenticated GitHub login, used to distinguish
+	// Grab / Take / Drop when the user presses 'a' on the PR list.
+	currentUser string
+
 	// Detail prefetch: while the user navigates the list, the next 2 items
 	// are fetched in the background and stored here. When the user presses
 	// Enter, the cached detail is used immediately — no loading spinner.
@@ -611,6 +616,9 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			m.loaded = false
 			return m, tea.Batch(m.fetchCmd(), m.spinner.Tick)
 		}
+		if msg.silentRefresh {
+			return m, tea.Batch(clearPRActionMsgCmd(), m.silentFetchCmd())
+		}
 		return m, clearPRActionMsgCmd()
 
 	case prActionErrMsg:
@@ -757,6 +765,32 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				}
 				m.loadingReviewerForm = true
 				return m, tea.Batch(fetchReviewerDataCmd(), m.spinner.Tick)
+			case key.Matches(msg, keys.IssueAssign):
+				// Assign/unassign @me — not allowed on merged or closed PRs.
+				pr := m.detailPR
+				if strings.EqualFold(pr.State, "merged") || strings.EqualFold(pr.State, "closed") {
+					return m, nil
+				}
+				if isMeAssigned(pr.Assignees, m.currentUser) {
+					m.actionPending = "Unassigning from @me…"
+					m.actionMsg = ""
+					m.actionErr = nil
+					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+						if err := github.UnassignPRSelf(pr.Number); err != nil {
+							return prActionErrMsg{err: err}
+						}
+						return prActionDoneMsg{message: "Unassigned from @me.", number: pr.Number}
+					})
+				}
+				m.actionPending = "Assigning to @me…"
+				m.actionMsg = ""
+				m.actionErr = nil
+				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+					if err := github.AssignPRSelf(pr.Number); err != nil {
+						return prActionErrMsg{err: err}
+					}
+					return prActionDoneMsg{message: "Assigned to @me.", number: pr.Number}
+				})
 			case key.Matches(msg, keys.PRMerge):
 				// Merge — not allowed on already merged or closed PRs.
 				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
@@ -798,6 +832,39 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				if item, ok := m.list.SelectedItem().(prListItem); ok {
 					url := item.pr.URL
 					return m, func() tea.Msg { github.OpenURL(url); return nil }
+				}
+			case key.Matches(msg, keys.IssueAssign):
+				if item, ok := m.list.SelectedItem().(prListItem); ok {
+					pr := item.pr
+					if isMeAssigned(pr.Assignees, m.currentUser) {
+						// Drop — remove @me, leave any other assignees.
+						m.actionPending = "Dropping…"
+						m.actionMsg = ""
+						m.actionErr = nil
+						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+							if err := github.UnassignPRSelf(pr.Number); err != nil {
+								return prActionErrMsg{err: err}
+							}
+							return prActionDoneMsg{message: "Dropped.", silentRefresh: true}
+						})
+					}
+					// Grab (unassigned) or Take (assigned to someone else).
+					verb := "Grabbing…"
+					done := "Grabbed."
+					if len(pr.Assignees) > 0 {
+						verb = "Taking…"
+						done = "Taken."
+					}
+					m.actionPending = verb
+					m.actionMsg = ""
+					m.actionErr = nil
+					doneMsg := done
+					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+						if err := github.AssignPRSelf(pr.Number); err != nil {
+							return prActionErrMsg{err: err}
+						}
+						return prActionDoneMsg{message: doneMsg, silentRefresh: true}
+					})
 				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
