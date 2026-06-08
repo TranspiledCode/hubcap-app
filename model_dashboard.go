@@ -308,8 +308,8 @@ func (m DashboardModel) View() string {
 		name := sectionNames[sectionID]
 		count := sectionCounts[sectionID]
 
-		left := icon + "  " + nameStyle.Render(name) + "  "
-		right := "  " + countStyle.Render(fmt.Sprintf("%d", count))
+		left := bgSt.Render(icon+"  ") + nameStyle.Render(name) + bgSt.Render("  ")
+		right := bgSt.Render("  ") + countStyle.Render(fmt.Sprintf("%d", count))
 		ruleW := width - lipgloss.Width(left) - lipgloss.Width(right)
 		if ruleW < 1 {
 			ruleW = 1
