@@ -39,9 +39,9 @@ type prContentRenderedMsg struct {
 
 // renderPRContentCmd renders PR detail content in a goroutine so the heavy
 // glamour call never blocks the BubbleTea Update loop.
-func renderPRContentCmd(pr github.PullRequest, width int) tea.Cmd {
+func renderPRContentCmd(pr github.PullRequest, width int, pal Palette) tea.Cmd {
 	return func() tea.Msg {
-		return prContentRenderedMsg{content: renderPRDetailContent(pr, width)}
+		return prContentRenderedMsg{content: renderPRDetailContent(pr, width, pal)}
 	}
 }
 
@@ -152,7 +152,7 @@ func (p prListItem) Description() string {
 	if p.pr.IsDraft {
 		status = "draft"
 	}
-	return fmt.Sprintf("%s  %s  %s", p.pr.Author.Login, status, summarizeChecks(p.pr.StatusRollup))
+	return fmt.Sprintf("%s  %s", p.pr.Author.Login, status)
 }
 func (p prListItem) FilterValue() string {
 	return fmt.Sprintf("%d %s", p.pr.Number, p.pr.Title)
@@ -300,7 +300,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		shownLabels = pr.Labels[:maxLabels]
 		labelOverflow = len(pr.Labels) - maxLabels
 	}
-	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget)
+	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget, d.pal)
 	if labelOverflow > 0 {
 		labelStr += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
 	}
@@ -584,9 +584,9 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 		m.detailPR = msg.pr
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
 		m.showDetail = true
-		return m, renderPRContentCmd(msg.pr, m.width)
+		return m, renderPRContentCmd(msg.pr, m.width, m.palette)
 
 	case prContentRenderedMsg:
 		m.detail.SetContent(msg.content)
@@ -908,10 +908,10 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
 					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-					m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.pr.Number)
-					cmds = append(cmds, renderPRContentCmd(prefetched, m.width))
+					cmds = append(cmds, renderPRContentCmd(prefetched, m.width, m.palette))
 				} else {
 					m.loadingDetail = true
 					cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
@@ -964,7 +964,7 @@ func (m PRsModel) View() string {
 	}
 
 	if m.err != nil {
-		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err)))
+		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err), m.palette))
 		return b.String()
 	}
 
@@ -979,9 +979,9 @@ func (m PRsModel) View() string {
 }
 
 // renderPRDetailContent builds scrollable body-only content for the viewport.
-func renderPRDetailContent(pr github.PullRequest, width int) string {
+func renderPRDetailContent(pr github.PullRequest, width int, pal Palette) string {
 	if pr.Body == "" {
-		return styleGray.Render("No description.") + "\n"
+		return lipgloss.NewStyle().Foreground(pal.TextDim).Render("No description.") + "\n"
 	}
 	return renderMarkdown(pr.Body, width-4)
 }
