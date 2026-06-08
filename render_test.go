@@ -9,7 +9,8 @@ import (
 
 func TestRenderIssueContentCmd_RendersBodyToMessage(t *testing.T) {
 	issue := github.Issue{Body: "# Hello\n\nSome **bold** text."}
-	cmd := renderIssueContentCmd(issue, 80)
+	pal := resolvePalette("")
+	cmd := renderIssueContentCmd(issue, 80, pal)
 	if cmd == nil {
 		t.Fatal("expected non-nil tea.Cmd")
 	}
@@ -25,7 +26,8 @@ func TestRenderIssueContentCmd_RendersBodyToMessage(t *testing.T) {
 
 func TestRenderIssueContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 	issue := github.Issue{Body: ""}
-	cmd := renderIssueContentCmd(issue, 80)
+	pal := resolvePalette("")
+	cmd := renderIssueContentCmd(issue, 80, pal)
 	msg := cmd()
 	if _, ok := msg.(issueContentRenderedMsg); !ok {
 		t.Fatalf("expected issueContentRenderedMsg for empty body, got %T", msg)
@@ -34,7 +36,8 @@ func TestRenderIssueContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 
 func TestRenderPRContentCmd_RendersBodyToMessage(t *testing.T) {
 	pr := github.PullRequest{Body: "## Summary\n\nFixes the bug."}
-	cmd := renderPRContentCmd(pr, 80)
+	pal := resolvePalette("")
+	cmd := renderPRContentCmd(pr, 80, pal)
 	if cmd == nil {
 		t.Fatal("expected non-nil tea.Cmd")
 	}
@@ -50,7 +53,8 @@ func TestRenderPRContentCmd_RendersBodyToMessage(t *testing.T) {
 
 func TestRenderPRContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 	pr := github.PullRequest{Body: ""}
-	cmd := renderPRContentCmd(pr, 80)
+	pal := resolvePalette("")
+	cmd := renderPRContentCmd(pr, 80, pal)
 	msg := cmd()
 	if _, ok := msg.(prContentRenderedMsg); !ok {
 		t.Fatalf("expected prContentRenderedMsg for empty body, got %T", msg)

@@ -250,13 +250,19 @@ func menu(reader *bufio.Reader, options []string) string {
 		fmt.Print("\033[?25l")
 		for index, option := range options {
 			if index == selected {
-				fmt.Printf("%s %s\033[K\r\n", styleCyan.Render(">"), option)
+				fmt.Printf("%s %s\033[K\r\n", lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(">"), option)
 			} else {
 				fmt.Printf("  %s\033[K\r\n", option)
 			}
 		}
 		fmt.Print("\r\n")
-		fmt.Print(hintBar("↑↓", "navigate", "enter", "select", "1-9", "jump", "q", "back") + "\033[K")
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		cyanStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+		hint := dimStyle.Render("["+cyanStyle.Render("↑↓")+"]") + " " + dimStyle.Render("navigate") +
+			"  ·  " + dimStyle.Render("["+cyanStyle.Render("enter")+"]") + " " + dimStyle.Render("select") +
+			"  ·  " + dimStyle.Render("["+cyanStyle.Render("1-9")+"]") + " " + dimStyle.Render("jump") +
+			"  ·  " + dimStyle.Render("["+cyanStyle.Render("q")+"]") + " " + dimStyle.Render("back")
+		fmt.Print(hint + "\033[K")
 		fmt.Printf("\033[%dF", len(options)+1)
 	}
 

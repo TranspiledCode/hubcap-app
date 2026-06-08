@@ -259,7 +259,7 @@ func (m DashboardModel) View() string {
 		return fmt.Sprintf("\n  %s Loading dashboard...\n", m.spinner.View())
 	}
 	if m.err != nil {
-		return errorBox(fmt.Sprintf("Dashboard error: %v\n\nPress r to retry.", m.err))
+		return errorBox(fmt.Sprintf("Dashboard error: %v\n\nPress r to retry.", m.err), m.palette)
 	}
 
 	width := m.width - 4
@@ -420,7 +420,7 @@ func (m DashboardModel) View() string {
 			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
 			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
 			line2Left := base.Foreground(pal.TextMuted).Render("@"+truncate(p.Author.Login, 14)) +
-				dimSep + summarizeChecks(p.StatusRollup)
+				dimSep + summarizeChecks(p.StatusRollup, pal)
 			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secMyPRs:
@@ -435,7 +435,7 @@ func (m DashboardModel) View() string {
 			} else if p.IsDraft {
 				line2Left = base.Foreground(pal.TextMuted).Render("draft")
 			}
-			if checks := summarizeChecks(p.StatusRollup); checks != "" {
+			if checks := summarizeChecks(p.StatusRollup, pal); checks != "" {
 				if line2Left != "" {
 					line2Left += dimSep + checks
 				} else {
@@ -474,7 +474,7 @@ func (m DashboardModel) View() string {
 			if selected {
 				bgKey = string(pal.BgSelected)
 			}
-			if labels := issueRowLabels(shownLabels, bgKey, labelMax); labels != "" {
+			if labels := issueRowLabels(shownLabels, bgKey, labelMax, pal); labels != "" {
 				line2Left += dimSep + labels
 				if labelOverflow > 0 {
 					line2Left += base.Foreground(pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
