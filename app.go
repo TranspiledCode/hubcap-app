@@ -439,6 +439,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.currentUser = msg.login
 			m.issues.currentUser = msg.login
+			m.prs.currentUser = msg.login
 		}
 		return m, nil
 
@@ -827,9 +828,14 @@ func detailActionFooter(m AppModel, width int) string {
 			}
 		default:
 			// Open or draft PR: full action set.
+			prAssignLabel := "assign"
+			if isMeAssigned(m.prs.detailPR.Assignees, m.currentUser) {
+				prAssignLabel = "unassign"
+			}
 			btns = []KeyButton{
 				kb(keys.Back, "back", ColorMeta),
 				kb(keys.PRClose, "close", ColorDanger),
+				kb(keys.IssueAssign, prAssignLabel, ColorAction),
 				kb(keys.PRCheckout, "checkout", ColorAction),
 				kb(keys.PRMerge, "merge", ColorAction),
 				kb(keys.PRReview, "reviewer", ColorAction),
@@ -874,6 +880,17 @@ func footerView(m AppModel, width int, theme UITheme) string {
 			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme)
 		}
 	}
+	if m.activeTab == TabPRs && !m.prs.showDetail {
+		if m.prs.actionErr != nil {
+			return footerToast(m.prs.actionErr.Error(), true, width, theme)
+		}
+		if m.prs.actionMsg != "" {
+			return footerToast(m.prs.actionMsg, false, width, theme)
+		}
+		if m.prs.actionPending != "" {
+			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width, theme)
+		}
+	}
 
 	switch m.activeTab {
 	case TabDashboard:
@@ -902,11 +919,21 @@ func footerView(m AppModel, width int, theme UITheme) string {
 			kb(keys.Help, "shortcuts", ColorMeta),
 		)
 	case TabPRs:
+		// Grab / Take / Drop label depends on the selected PR's assignees.
+		prAssignLabel, prAssignColor := "grab", ColorAction
+		if item, ok := m.prs.list.SelectedItem().(prListItem); ok {
+			switch {
+			case isMeAssigned(item.pr.Assignees, m.currentUser):
+				prAssignLabel, prAssignColor = "drop", ColorDanger
+			case len(item.pr.Assignees) > 0:
+				prAssignLabel, prAssignColor = "take", ColorMeta
+			}
+		}
 		return RenderFooterBar(width, theme,
 			kb(keys.Open, "open", ColorAction),
 			kb(keys.Browser, "browser", ColorMeta),
 			kb(keys.New, "new PR", ColorAction),
-			kb(keys.PRCheckout, "checkout", ColorAction),
+			NewKeyButton(keys.IssueAssign.Help().Key, prAssignLabel, prAssignColor),
 			kb(keys.Help, "shortcuts", ColorMeta),
 		)
 	default:
@@ -997,6 +1024,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(sec("Pull Requests — List"))
 	buf.WriteString(line(keys.New, "create new pull request") + "\n")
 	buf.WriteString(line(keys.Browser, "open selected PR in browser") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "grab (unassigned) / take (from someone) / drop (yourself)") + "\n")
 
 	// ── Pull request detail ───────────────────────────────────────────────
 	buf.WriteString(sec("Pull Requests — Detail"))
@@ -1004,6 +1032,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(line(keys.PRMerge, "merge pull request") + "\n")
 	buf.WriteString(line(keys.PRClose, "close / reopen pull request") + "\n")
 	buf.WriteString(line(keys.PRReview, "request a reviewer") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "assign / unassign @me") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
