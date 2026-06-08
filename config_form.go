@@ -70,7 +70,8 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 				huh.NewOption("Nord       — cool blue-grey tones", "nord"),
 				huh.NewOption("Catppuccin — warm dark pastels", "catppuccin"),
 				huh.NewOption("Transpiled — electric blue & violet", "transpiled"),
-				huh.NewOption("Cobalt 2   — deep blue, mint & yellow", "cobalt2"),
+				huh.NewOption("Cobalt 2    — deep blue, mint & yellow", "cobalt2"),
+				huh.NewOption("ImageScoop  — periwinkle, purple & lime", "imagescoop"),
 			).
 			Value(&vals.ColorTheme),
 		huh.NewSelect[string]().
