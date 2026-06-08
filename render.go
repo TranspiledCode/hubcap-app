@@ -606,23 +606,26 @@ func stateIndicator(state string, isDraft bool, pal Palette) string {
 	}
 }
 
-func summarizeChecks(checks []github.CheckRun, pal Palette) string {
+func summarizeChecks(checks []github.CheckRun, bg lipgloss.Color, pal Palette) string {
+	st := func(fg lipgloss.Color) lipgloss.Style {
+		return lipgloss.NewStyle().Foreground(fg).Background(bg)
+	}
 	if len(checks) == 0 {
-		return "—"
+		return st(pal.TextFaint).Render("—")
 	}
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return lipgloss.NewStyle().Foreground(pal.CheckFail).Render("✗")
+			return st(pal.CheckFail).Render("✗")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return lipgloss.NewStyle().Foreground(pal.CheckPending).Render("…")
+		return st(pal.CheckPending).Render("…")
 	}
-	return lipgloss.NewStyle().Foreground(pal.CheckPass).Render("✓")
+	return st(pal.CheckPass).Render("✓")
 }
 
 
