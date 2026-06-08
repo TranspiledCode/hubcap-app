@@ -844,30 +844,41 @@ func timeAgo(ts string) string {
 	}
 }
 
-// rendererCache caches glamour TermRenderers keyed by width so NewTermRenderer
-// (which is expensive) is only called once per terminal width.
-var rendererCache sync.Map // map[int]*glamour.TermRenderer
+// rendererCache caches glamour TermRenderers keyed by (width, glamourStyle).
+var rendererCache sync.Map // map[rendererKey]*glamour.TermRenderer
 
-// renderMarkdown renders a Markdown string to ANSI-styled terminal output
-// using glamour. width is the available content width for word wrapping.
+type rendererKey struct {
+	width int
+	style string
+}
+
+// renderMarkdown renders a Markdown string to ANSI-styled terminal output.
+// glamourStyle is "light", "dark", or "auto" (auto-detects from terminal).
 // Falls back to the raw string if glamour fails so the body is never blank.
-func renderMarkdown(body string, width int) string {
+func renderMarkdown(body string, width int, glamourStyle string) string {
 	if body == "" {
 		return ""
 	}
+	key := rendererKey{width, glamourStyle}
 	var r *glamour.TermRenderer
-	if cached, ok := rendererCache.Load(width); ok {
+	if cached, ok := rendererCache.Load(key); ok {
 		r = cached.(*glamour.TermRenderer)
 	} else {
+		var opt glamour.TermRendererOption
+		switch glamourStyle {
+		case "light":
+			opt = glamour.WithStandardStyle("light")
+		case "dark":
+			opt = glamour.WithStandardStyle("dark")
+		default:
+			opt = glamour.WithAutoStyle()
+		}
 		var err error
-		r, err = glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(width),
-		)
+		r, err = glamour.NewTermRenderer(opt, glamour.WithWordWrap(width))
 		if err != nil {
 			return body
 		}
-		rendererCache.Store(width, r)
+		rendererCache.Store(key, r)
 	}
 	out, err := r.Render(body)
 	if err != nil {

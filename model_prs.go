@@ -987,7 +987,11 @@ func renderPRDetailContent(pr github.PullRequest, width int, pal Palette) string
 	if pr.Body == "" {
 		return lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("No description.") + "\n"
 	}
-	return renderMarkdown(pr.Body, width-4)
+	glamourStyle := "auto"
+	if pal.BgBody != "" {
+		glamourStyle = "light"
+	}
+	return renderMarkdown(pr.Body, width-4, glamourStyle)
 }
 
 // renderPRDetailView renders the scrollable viewport only.

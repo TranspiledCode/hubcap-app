@@ -961,7 +961,11 @@ func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string
 	if issue.Body == "" {
 		return lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("No description.") + "\n"
 	}
-	return renderMarkdown(issue.Body, width-4)
+	glamourStyle := "auto"
+	if pal.BgBody != "" {
+		glamourStyle = "light"
+	}
+	return renderMarkdown(issue.Body, width-4, glamourStyle)
 }
 
 // renderIssueDetailView renders the scrollable viewport only.
