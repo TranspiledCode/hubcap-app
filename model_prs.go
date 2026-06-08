@@ -47,6 +47,22 @@ func renderPRContentCmd(pr github.PullRequest, width int) tea.Cmd {
 // clearPRActionMsgMsg is sent by a timer to dismiss the toast notification.
 type clearPRActionMsgMsg struct{}
 
+// reviewerDataFetchedMsg carries the collaborator list fetched before showing
+// the reviewer select form.
+type reviewerDataFetchedMsg struct {
+	reviewers []string
+	err       error
+}
+
+// fetchReviewerDataCmd fetches the project's collaborator list so the reviewer
+// select form can be populated with real names.
+func fetchReviewerDataCmd() tea.Cmd {
+	return func() tea.Msg {
+		reviewers, err := github.FetchAssignees()
+		return reviewerDataFetchedMsg{reviewers: reviewers, err: err}
+	}
+}
+
 func clearPRActionMsgCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 		return clearPRActionMsgMsg{}
@@ -73,20 +89,22 @@ func (m PRsModel) silentFetchCmd() tea.Cmd {
 type prFormType int
 
 const (
-	prFormNone  prFormType = iota
-	prFormMerge            // "m" — choose merge strategy
-	prFormNew              // "n" — create a new PR
+	prFormNone   prFormType = iota
+	prFormMerge             // "m" — choose merge strategy
+	prFormNew               // "n" — create a new PR
+	prFormReview            // "v" — request a reviewer
 )
 
 // prFormVals is heap-allocated so huh's Value() pointers remain valid across
 // BubbleTea value-receiver model copies.
 type prFormVals struct {
-	formType  prFormType
-	mergeType string
-	newTitle  string
-	newBody   string
-	newBase   string
-	newDraft  bool
+	formType    prFormType
+	mergeType   string
+	newTitle    string
+	newBody     string
+	newBase     string
+	newDraft    bool
+	reviewerVal string
 }
 
 // ── PRListItem ────────────────────────────────────────────────────────────────
@@ -334,10 +352,11 @@ type PRsModel struct {
 	actionMsg     string
 	actionErr     error
 
-	// Inline form (merge strategy, new PR). activeForm is nil when closed.
+	// Inline form (merge strategy, new PR, reviewer). activeForm is nil when closed.
 	// formVals is heap-allocated for stable pointers across model copies.
-	activeForm *huh.Form
-	formVals   *prFormVals
+	activeForm          *huh.Form
+	formVals            *prFormVals
+	loadingReviewerForm bool // true while fetching collaborators for reviewer select
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
@@ -434,6 +453,25 @@ func (m PRsModel) handleFormComplete() (PRsModel, tea.Cmd) {
 				return prsFetchedMsg{prs: prs, err: err}
 			},
 		)
+
+	case prFormReview:
+		reviewer := strings.TrimSpace(m.formVals.reviewerVal)
+		if reviewer == "" {
+			return m, nil
+		}
+		pr := m.detailPR
+		m.actionPending = fmt.Sprintf("Requesting review from @%s…", reviewer)
+		m.actionMsg = ""
+		m.actionErr = nil
+		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			if err := github.RequestReview(pr.Number, reviewer); err != nil {
+				return prActionErrMsg{err: err}
+			}
+			return prActionDoneMsg{
+				message: fmt.Sprintf("Review requested from @%s.", reviewer),
+				number:  pr.Number,
+			}
+		})
 	}
 
 	return m, nil
@@ -536,6 +574,34 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.actionErr = nil
 		return m, nil
 
+	case reviewerDataFetchedMsg:
+		m.loadingReviewerForm = false
+		if msg.err != nil || len(msg.reviewers) == 0 {
+			// Fallback: show a plain text input if fetch failed or repo has no collaborators.
+			m.formVals.reviewerVal = ""
+			m.formVals.formType = prFormReview
+			m.activeForm = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Request reviewer").
+					Placeholder("GitHub username").
+					Value(&m.formVals.reviewerVal),
+			)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+			return m, m.activeForm.Init()
+		}
+		opts := make([]huh.Option[string], len(msg.reviewers))
+		for i, r := range msg.reviewers {
+			opts[i] = huh.NewOption(r, r)
+		}
+		m.formVals.reviewerVal = msg.reviewers[0]
+		m.formVals.formType = prFormReview
+		m.activeForm = huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Request reviewer").
+				Options(opts...).
+				Value(&m.formVals.reviewerVal),
+		)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+		return m, m.activeForm.Init()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width - 2
 		m.height = msg.Height - 2
@@ -547,14 +613,14 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Keep spinning while loading or while a background action is in flight.
-		if m.loading || m.loadingDetail || m.actionPending != "" {
+		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingReviewerForm {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 
 	case tea.KeyMsg:
-		if m.loading || m.loadingDetail {
+		if m.loading || m.loadingDetail || m.loadingReviewerForm {
 			break
 		}
 
@@ -588,8 +654,11 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				}
 				return m, clearPRActionMsgCmd()
 			case key.Matches(msg, keys.PRClose):
-				// Close or Reopen PR
+				// Close or Reopen PR — merged PRs cannot be closed or reopened.
 				pr := m.detailPR
+				if strings.EqualFold(pr.State, "merged") {
+					return m, nil
+				}
 				isClosed := strings.EqualFold(pr.State, "closed")
 				if isClosed {
 					m.actionPending = "Reopening PR…"
@@ -614,7 +683,10 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					return prActionDoneMsg{message: done, number: pr.Number}
 				})
 			case key.Matches(msg, keys.PRCheckout):
-				// Checkout branch.
+				// Checkout branch — not allowed on merged or closed PRs.
+				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
+					return m, nil
+				}
 				pr := m.detailPR
 				m.actionPending = fmt.Sprintf("Checking out %q…", pr.HeadRefName)
 				m.actionMsg = ""
@@ -627,7 +699,18 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 						message: fmt.Sprintf("Checked out branch %q.", pr.HeadRefName),
 					}
 				})
+			case key.Matches(msg, keys.PRReview):
+				// Request reviewer — only allowed on open PRs.
+				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
+					return m, nil
+				}
+				m.loadingReviewerForm = true
+				return m, tea.Batch(fetchReviewerDataCmd(), m.spinner.Tick)
 			case key.Matches(msg, keys.PRMerge):
+				// Merge — not allowed on already merged or closed PRs.
+				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
+					return m, nil
+				}
 				// Merge — embedded select form for strategy choice.
 				m.formVals.mergeType = "rebase"
 				m.formVals.formType = prFormMerge

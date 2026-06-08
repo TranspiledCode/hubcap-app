@@ -94,6 +94,11 @@ func CreatePRFill() error {
 	return err
 }
 
+func RequestReview(number int, reviewer string) error {
+	_, err := RunCommand("gh", "pr", "edit", strconv.Itoa(number), "--add-reviewer", reviewer)
+	return err
+}
+
 func FilterNonDraftPRs(prs []PullRequest) []PullRequest {
 	out := make([]PullRequest, 0, len(prs))
 	for _, pr := range prs {
