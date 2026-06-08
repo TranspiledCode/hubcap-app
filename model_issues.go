@@ -665,6 +665,10 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				})
 			case key.Matches(msg, keys.IssueAssign):
 				issue := m.detailIssue
+				// Assign/unassign is not allowed on a closed issue.
+				if strings.EqualFold(issue.State, "closed") {
+					return m, nil
+				}
 				if len(issue.Assignees) > 0 {
 					m.actionPending = "Unassigning from @me…"
 					m.actionMsg = ""
@@ -697,6 +701,10 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssueDevelop):
+				// Developing a branch is not allowed on a closed issue.
+				if strings.EqualFold(m.detailIssue.State, "closed") {
+					return m, nil
+				}
 				// Develop branch — embedded input form pre-filled with suggested name.
 				defaultBranch := deriveBranchName(m.detailIssue.Number, m.detailIssue.Title)
 				m.formVals.branchDefault = defaultBranch
@@ -710,6 +718,10 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssuePR):
+				// Creating a PR is not allowed on a closed issue.
+				if strings.EqualFold(m.detailIssue.State, "closed") {
+					return m, nil
+				}
 				// Create PR from current branch using --fill (no user input needed).
 				m.actionPending = "Creating PR…"
 				m.actionMsg = ""
