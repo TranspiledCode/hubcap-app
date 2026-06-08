@@ -11,10 +11,12 @@ import (
 )
 
 type Config struct {
-	AvailableFilter     github.Filters `json:"available_filter"`
-	AutoRefreshEnabled  bool           `json:"auto_refresh_enabled"`
-	AutoRefreshInterval int            `json:"auto_refresh_interval"` // in seconds
-	UITheme             string         `json:"ui_theme"`              // "minimal" | "default" | "comfortable"
+	AvailableFilter     github.Filters   `json:"available_filter"`
+	AutoRefreshEnabled  bool             `json:"auto_refresh_enabled"`
+	AutoRefreshInterval int              `json:"auto_refresh_interval"` // in seconds
+	UITheme             string           `json:"ui_theme"`              // "minimal" | "default" | "comfortable"
+	IssueFilters        github.Filters   `json:"issue_filters"`
+	PRFilters           github.PRFilters `json:"pr_filters"`
 }
 
 func defaultConfig() Config {
@@ -23,6 +25,8 @@ func defaultConfig() Config {
 		AutoRefreshEnabled:  false,
 		AutoRefreshInterval: 60,
 		UITheme:             "default",
+		IssueFilters:        github.Filters{State: "open", Limit: 50},
+		PRFilters:           github.PRFilters{State: "open", Limit: 50},
 	}
 }
 
@@ -47,6 +51,15 @@ func loadConfigFrom(path string) Config {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "hubcap: warning: bad config file, using defaults (%v)\n", err)
 		return defaultConfig()
+	}
+	// Migrate existing configs that pre-date filter persistence: if filters
+	// are zero-valued (Limit == 0), fill in sensible defaults.
+	def := defaultConfig()
+	if cfg.IssueFilters.Limit == 0 {
+		cfg.IssueFilters = def.IssueFilters
+	}
+	if cfg.PRFilters.Limit == 0 {
+		cfg.PRFilters = def.PRFilters
 	}
 	return cfg
 }

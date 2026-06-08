@@ -49,13 +49,15 @@ func main() {
 	}
 
 	cfg := loadConfig()
+	cache := loadCache()
 	repo := github.FetchRepo()
 
 	model := newAppModel(
 		repo,
 		cfg,
-		github.Filters{State: "open", Limit: 50},
-		github.PRFilters{State: "open", Limit: 50},
+		cfg.IssueFilters,
+		cfg.PRFilters,
+		cache,
 	)
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
