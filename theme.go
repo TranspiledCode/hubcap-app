@@ -1,15 +1,12 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Seven named
+// A Palette holds every semantic colour role used across the UI. Four named
 // palettes are provided:
 //
-//	"default"     — the original dark terminal look (amber + green)
-//	"dracula"     — Dracula colour scheme (purple accent, vibrant)
-//	"nord"        — Nord colour scheme (cool blue-grey tones)
-//	"catppuccin"  — Catppuccin Mocha (warm dark pastels)
-//	"transpiled"  — Transpiled brand colours (electric blue + violet + neon green)
-//	"cobalt2"     — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
-//	"imagescoop"  — ImageScoop brand (periwinkle + purple + lime + hot pink)
+//	"default"    — the original dark terminal look (amber + green)
+//	"transpiled" — Transpiled brand colours (electric blue + violet + neon green)
+//	"cobalt2"    — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
+//	"imagescoop" — ImageScoop brand (periwinkle + purple + lime + hot pink)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
@@ -62,9 +59,6 @@ type Palette struct {
 
 const (
 	ColorThemeDefault    = "default"
-	ColorThemeDracula    = "dracula"
-	ColorThemeNord       = "nord"
-	ColorThemeCatppuccin = "catppuccin"
 	ColorThemeTranspiled = "transpiled"
 	ColorThemeCobalt2    = "cobalt2"
 	ColorThemeImageScoop = "imagescoop"
@@ -73,9 +67,6 @@ const (
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
 var colorThemeOrder = []string{
 	ColorThemeDefault,
-	ColorThemeDracula,
-	ColorThemeNord,
-	ColorThemeCatppuccin,
 	ColorThemeTranspiled,
 	ColorThemeCobalt2,
 	ColorThemeImageScoop,
@@ -111,96 +102,6 @@ var paletteDefault = Palette{
 	CheckPass:    lipgloss.Color("83"),
 	CheckFail:    lipgloss.Color("196"),
 	CheckPending: lipgloss.Color("214"),
-}
-
-var paletteDracula = Palette{
-	Action: lipgloss.Color("#50fa7b"),
-	Meta:   lipgloss.Color("#ffb86c"),
-	Danger: lipgloss.Color("#ff5555"),
-	Accent: lipgloss.Color("#bd93f9"),
-	Title:  lipgloss.Color("#ff79c6"),
-	Number: lipgloss.Color("#8be9fd"),
-
-	Text:      lipgloss.Color("#f8f8f2"),
-	TextBold:  lipgloss.Color("#ffffff"),
-	TextMuted: lipgloss.Color("#6272a4"),
-	TextDim:   lipgloss.Color("#44475a"),
-	TextFaint: lipgloss.Color("#383a59"),
-
-	BgHeader:   lipgloss.Color("#282a36"),
-	BgTabs:     lipgloss.Color("#21222c"),
-	BgSelected: lipgloss.Color("#44475a"),
-	BgFooter:   lipgloss.Color("#282a36"),
-	BgComfy:    lipgloss.Color("#21222c"),
-
-	StatusOpen:   lipgloss.Color("#50fa7b"),
-	StatusClosed: lipgloss.Color("#ff5555"),
-	StatusMerged: lipgloss.Color("#bd93f9"),
-	StatusDraft:  lipgloss.Color("#ffb86c"),
-
-	CheckPass:    lipgloss.Color("#50fa7b"),
-	CheckFail:    lipgloss.Color("#ff5555"),
-	CheckPending: lipgloss.Color("#f1fa8c"),
-}
-
-var paletteNord = Palette{
-	Action: lipgloss.Color("#a3be8c"),
-	Meta:   lipgloss.Color("#ebcb8b"),
-	Danger: lipgloss.Color("#bf616a"),
-	Accent: lipgloss.Color("#88c0d0"),
-	Title:  lipgloss.Color("#81a1c1"),
-	Number: lipgloss.Color("#88c0d0"),
-
-	Text:      lipgloss.Color("#d8dee9"),
-	TextBold:  lipgloss.Color("#eceff4"),
-	TextMuted: lipgloss.Color("#81a1c1"),
-	TextDim:   lipgloss.Color("#616e88"),
-	TextFaint: lipgloss.Color("#434c5e"),
-
-	BgHeader:   lipgloss.Color("#2e3440"),
-	BgTabs:     lipgloss.Color("#3b4252"),
-	BgSelected: lipgloss.Color("#3b4252"),
-	BgFooter:   lipgloss.Color("#2e3440"),
-	BgComfy:    lipgloss.Color("#242933"),
-
-	StatusOpen:   lipgloss.Color("#a3be8c"),
-	StatusClosed: lipgloss.Color("#bf616a"),
-	StatusMerged: lipgloss.Color("#b48ead"),
-	StatusDraft:  lipgloss.Color("#d08770"),
-
-	CheckPass:    lipgloss.Color("#a3be8c"),
-	CheckFail:    lipgloss.Color("#bf616a"),
-	CheckPending: lipgloss.Color("#ebcb8b"),
-}
-
-var paletteCatppuccin = Palette{
-	Action: lipgloss.Color("#a6e3a1"),
-	Meta:   lipgloss.Color("#fab387"),
-	Danger: lipgloss.Color("#f38ba8"),
-	Accent: lipgloss.Color("#cba6f7"),
-	Title:  lipgloss.Color("#cba6f7"),
-	Number: lipgloss.Color("#89b4fa"),
-
-	Text:      lipgloss.Color("#cdd6f4"),
-	TextBold:  lipgloss.Color("#ffffff"),
-	TextMuted: lipgloss.Color("#a6adc8"),
-	TextDim:   lipgloss.Color("#7f849c"),
-	TextFaint: lipgloss.Color("#585b70"),
-
-	BgHeader:   lipgloss.Color("#1e1e2e"),
-	BgTabs:     lipgloss.Color("#313244"),
-	BgSelected: lipgloss.Color("#313244"),
-	BgFooter:   lipgloss.Color("#1e1e2e"),
-	BgComfy:    lipgloss.Color("#181825"),
-
-	StatusOpen:   lipgloss.Color("#a6e3a1"),
-	StatusClosed: lipgloss.Color("#f38ba8"),
-	StatusMerged: lipgloss.Color("#cba6f7"),
-	StatusDraft:  lipgloss.Color("#fab387"),
-
-	CheckPass:    lipgloss.Color("#a6e3a1"),
-	CheckFail:    lipgloss.Color("#f38ba8"),
-	CheckPending: lipgloss.Color("#f9e2af"),
 }
 
 // paletteCobalt2 is based on the West Bostis Cobalt 2 editor theme.
@@ -311,12 +212,6 @@ var paletteImageScoop = Palette{
 // paletteDefault for unknown / empty values.
 func resolvePalette(s string) Palette {
 	switch s {
-	case ColorThemeDracula:
-		return paletteDracula
-	case ColorThemeNord:
-		return paletteNord
-	case ColorThemeCatppuccin:
-		return paletteCatppuccin
 	case ColorThemeTranspiled:
 		return paletteTranspiled
 	case ColorThemeCobalt2:
