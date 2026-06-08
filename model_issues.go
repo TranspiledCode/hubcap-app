@@ -39,9 +39,9 @@ type issueContentRenderedMsg struct {
 
 // renderIssueContentCmd renders issue detail content in a goroutine so the
 // heavy glamour call never blocks the BubbleTea Update loop.
-func renderIssueContentCmd(issue github.Issue, width int) tea.Cmd {
+func renderIssueContentCmd(issue github.Issue, width int, pal Palette) tea.Cmd {
 	return func() tea.Msg {
-		return issueContentRenderedMsg{content: renderIssueDetailContent(issue, width)}
+		return issueContentRenderedMsg{content: renderIssueDetailContent(issue, width, pal)}
 	}
 }
 
@@ -132,7 +132,7 @@ func (i issueListItem) Title() string {
 	return fmt.Sprintf("#%-5d %s", i.issue.Number, i.issue.Title)
 }
 func (i issueListItem) Description() string {
-	return fmt.Sprintf("%s  %s", joinUsers(i.issue.Assignees), coloredLabelsCompact(i.issue.Labels, 60))
+	return fmt.Sprintf("%s  %s", joinUsers(i.issue.Assignees), joinLabels(i.issue.Labels))
 }
 func (i issueListItem) FilterValue() string {
 	return fmt.Sprintf("%d %s", i.issue.Number, i.issue.Title)
@@ -277,7 +277,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		if selected {
 			bgKey = string(d.pal.BgSelected)
 		}
-		labelPart = issueRowLabels(shown, bgKey, labelMax)
+		labelPart = issueRowLabels(shown, bgKey, labelMax, d.pal)
 		if overflow > 0 {
 			labelPart += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", overflow))
 		}
@@ -306,7 +306,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 // issueRowLabels renders a short colored label string for a list row.
 // bgKey is "" for no background or the color key (e.g. "235") when the row
 // is selected — so each segment explicitly matches the row background.
-func issueRowLabels(labels []github.Label, bgKey string, maxW int) string {
+func issueRowLabels(labels []github.Label, bgKey string, maxW int, pal Palette) string {
 	if len(labels) == 0 {
 		return ""
 	}
@@ -316,13 +316,13 @@ func issueRowLabels(labels []github.Label, bgKey string, maxW int) string {
 		}
 		return lipgloss.NewStyle()
 	}
-	sep := makeBase().Foreground(lipgloss.Color("238")).Render(" · ")
+	sep := makeBase().Foreground(pal.TextFaint).Render(" · ")
 	sepW := lipgloss.Width(sep)
 
 	var parts []string
 	used := 0
 	for _, l := range labels {
-		ls := labelStyle(l.Name)
+		ls := labelStyle(l.Name, pal)
 		if bgKey != "" {
 			ls = ls.Background(lipgloss.Color(bgKey))
 		}
@@ -580,9 +580,9 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 		m.detailIssue = msg.issue
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
 		m.showDetail = true
-		return m, renderIssueContentCmd(msg.issue, m.width)
+		return m, renderIssueContentCmd(msg.issue, m.width, m.palette)
 
 	case issueContentRenderedMsg:
 		m.detail.SetContent(msg.content)
@@ -871,10 +871,10 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				if prefetched, ok := m.prefetchedDetails[item.issue.Number]; ok {
 					m.detailIssue = prefetched
 					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-					m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.issue.Number)
-					cmds = append(cmds, renderIssueContentCmd(prefetched, m.width))
+					cmds = append(cmds, renderIssueContentCmd(prefetched, m.width, m.palette))
 				} else {
 					m.loadingDetail = true
 					cmds = append(cmds, fetchIssueDetailCmd(item.issue.Number))
@@ -927,7 +927,7 @@ func (m IssuesModel) View() string {
 	}
 
 	if m.err != nil {
-		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err)))
+		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err), m.palette))
 		return b.String()
 	}
 
@@ -953,9 +953,9 @@ func (m IssuesModel) currentMetaHeight() int {
 }
 
 // renderIssueDetailContent builds scrollable body-only content for the viewport.
-func renderIssueDetailContent(issue github.Issue, width int) string {
+func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string {
 	if issue.Body == "" {
-		return styleGray.Render("No description.") + "\n"
+		return lipgloss.NewStyle().Foreground(pal.TextDim).Render("No description.") + "\n"
 	}
 	return renderMarkdown(issue.Body, width-4)
 }
