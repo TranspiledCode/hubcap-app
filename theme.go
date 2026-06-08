@@ -1,12 +1,13 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Four named
+// A Palette holds every semantic colour role used across the UI. Five named
 // palettes are provided:
 //
 //	"default"    — the original dark terminal look (amber + green)
 //	"transpiled" — Transpiled brand colours (electric blue + violet + neon green)
 //	"cobalt2"    — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
 //	"imagescoop" — ImageScoop brand (periwinkle + purple + lime + hot pink)
+//	"parchment"  — light warm paper with jewel-tone accents (emerald + amethyst + sapphire + ruby)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
@@ -80,6 +81,7 @@ const (
 	ColorThemeTranspiled = "transpiled"
 	ColorThemeCobalt2    = "cobalt2"
 	ColorThemeImageScoop = "imagescoop"
+	ColorThemeParchment  = "parchment"
 )
 
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
@@ -88,6 +90,7 @@ var colorThemeOrder = []string{
 	ColorThemeTranspiled,
 	ColorThemeCobalt2,
 	ColorThemeImageScoop,
+	ColorThemeParchment,
 }
 
 // ── Palette definitions ───────────────────────────────────────────────────────
@@ -290,6 +293,56 @@ var paletteImageScoop = Palette{
 	LabelDefaultFg: lipgloss.Color("15"),
 }
 
+// paletteParchment is a light theme built on warm antique-paper backgrounds.
+// Jewel-tone accents — emerald (#1A7A4A), amethyst (#7C3D9B), sapphire
+// (#1565C0), and ruby (#B5272B) — pop vividly against the creamy base.
+var paletteParchment = Palette{
+	Action: lipgloss.Color("#1A7A4A"), // emerald green — "do it" actions
+	Meta:   lipgloss.Color("#7C3D9B"), // amethyst violet — structural / nav
+	Danger: lipgloss.Color("#B5272B"), // ruby red — destructive
+
+	Accent: lipgloss.Color("#1565C0"), // sapphire blue — cursor bar, spinner
+	Title:  lipgloss.Color("#7C3D9B"), // amethyst — titles, app border
+	Number: lipgloss.Color("#1565C0"), // sapphire — issue/PR numbers
+
+	Text:      lipgloss.Color("#3C3228"), // warm espresso brown — body text
+	TextBold:  lipgloss.Color("#1A1210"), // near-black — selected / highlighted
+	TextMuted: lipgloss.Color("#756860"), // medium warm brown — authors, secondary
+	TextDim:   lipgloss.Color("#9E8E80"), // lighter warm brown — timestamps
+	TextFaint: lipgloss.Color("#C2B4A4"), // faint warm beige — separator lines
+
+	BgHeader:   lipgloss.Color("#E0D9C4"), // warm parchment — title bar
+	BgTabs:     lipgloss.Color("#E8E1CD"), // slightly lighter — tab row
+	BgSelected: lipgloss.Color("#D9D1BC"), // warm tan — selected item
+	BgFooter:   lipgloss.Color("#E0D9C4"), // same as header — footer bar
+	BgComfy:    lipgloss.Color("#D6CEB8"), // a touch darker — comfortable footer
+
+	StatusOpen:   lipgloss.Color("#1A7A4A"), // emerald — open
+	StatusClosed: lipgloss.Color("#B5272B"), // ruby — closed
+	StatusMerged: lipgloss.Color("#7C3D9B"), // amethyst — merged
+	StatusDraft:  lipgloss.Color("#D45D00"), // burnt sienna — draft
+
+	CheckPass:    lipgloss.Color("#1A7A4A"),
+	CheckFail:    lipgloss.Color("#B5272B"),
+	CheckPending: lipgloss.Color("#D45D00"),
+
+	LabelDanger:  lipgloss.Color("#B5272B"), // ruby red
+	LabelWarn:    lipgloss.Color("#C07800"), // golden amber
+	LabelSuccess: lipgloss.Color("#1A7A4A"), // emerald
+	LabelFeature: lipgloss.Color("#1565C0"), // sapphire
+	LabelDocs:    lipgloss.Color("#7C3D9B"), // amethyst
+	LabelSubtle:  lipgloss.Color("#7A7060"), // muted warm grey-brown
+	LabelDefault: lipgloss.Color("#5C3D1E"), // warm cocoa
+
+	LabelDangerFg:  lipgloss.Color("15"),
+	LabelWarnFg:    lipgloss.Color("15"),
+	LabelSuccessFg: lipgloss.Color("15"),
+	LabelFeatureFg: lipgloss.Color("15"),
+	LabelDocsFg:    lipgloss.Color("15"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("15"),
+}
+
 // resolvePalette maps a colour-theme name to its Palette, falling back to
 // paletteDefault for unknown / empty values.
 func resolvePalette(s string) Palette {
@@ -300,6 +353,8 @@ func resolvePalette(s string) Palette {
 		return paletteCobalt2
 	case ColorThemeImageScoop:
 		return paletteImageScoop
+	case ColorThemeParchment:
+		return paletteParchment
 	default:
 		return paletteDefault
 	}
