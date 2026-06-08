@@ -408,9 +408,12 @@ func (m DashboardModel) View() string {
 		// rendered segment — icon, timestamp, assignee, separator, type badge —
 		// shares the same background and there are no dark gaps.
 		var base lipgloss.Style
+		var rowBg lipgloss.Color
 		if selected {
+			rowBg = selectedBg
 			base = lipgloss.NewStyle().Background(selectedBg)
 		} else {
+			rowBg = pal.BgBody
 			base = lipgloss.NewStyle().Background(pal.BgBody)
 		}
 		dimSep := base.Foreground(pal.TextFaint).Render("  ·  ")
@@ -421,7 +424,7 @@ func (m DashboardModel) View() string {
 			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
 			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
 			line2Left := base.Foreground(pal.TextMuted).Render("@"+truncate(p.Author.Login, 14)) +
-				dimSep + summarizeChecks(p.StatusRollup, pal)
+				dimSep + summarizeChecks(p.StatusRollup, rowBg, pal)
 			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secMyPRs:
@@ -436,7 +439,7 @@ func (m DashboardModel) View() string {
 			} else if p.IsDraft {
 				line2Left = base.Foreground(pal.TextMuted).Render("draft")
 			}
-			if checks := summarizeChecks(p.StatusRollup, pal); checks != "" {
+			if checks := summarizeChecks(p.StatusRollup, rowBg, pal); checks != "" {
 				if line2Left != "" {
 					line2Left += dimSep + checks
 				} else {
