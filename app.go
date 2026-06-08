@@ -573,22 +573,32 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeTab = msg.tab
 		switch msg.tab {
 		case TabIssues:
-			// Skip fetch if already loaded or a background fetch is in flight
-			// (parallel startup prefetch fires fetchCmd in Init).
 			if !m.issues.loaded && !m.issues.loading {
+				// First load — show spinner.
 				m.issues.loading = true
 				cmds = append(cmds, m.issues.fetchCmd(), m.issues.spinner.Tick)
+			} else if m.issues.loaded {
+				// Already have data — silently refresh in background (#53).
+				cmds = append(cmds, m.issues.silentFetchCmd())
 			}
 		case TabPRs:
-			// Same guard as TabIssues above.
 			if !m.prs.loaded && !m.prs.loading {
+				// First load — show spinner.
 				m.prs.loading = true
 				cmds = append(cmds, m.prs.fetchCmd(), m.prs.spinner.Tick)
+			} else if m.prs.loaded {
+				// Already have data — silently refresh in background (#53).
+				cmds = append(cmds, m.prs.silentFetchCmd())
 			}
 		case TabDashboard:
 			if !m.dashboard.loaded {
+				// First load — show spinner.
 				m.dashboard.loading = true
 				cmds = append(cmds, m.dashboard.fetchCmd(), m.dashboard.spinner.Tick)
+			} else {
+				// Already have data — re-fetch without setting loading=true so
+				// no spinner is shown; dashboardFetchedMsg updates data silently (#53).
+				cmds = append(cmds, m.dashboard.fetchCmd())
 			}
 		}
 
