@@ -584,7 +584,8 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		}
 		m.detailIssue = msg.issue
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
+		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
 		return m, renderIssueContentCmd(msg.issue, m.width, m.palette)
 
@@ -875,7 +876,8 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				if prefetched, ok := m.prefetchedDetails[item.issue.Number]; ok {
 					m.detailIssue = prefetched
 					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
+					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.issue.Number)
 					cmds = append(cmds, renderIssueContentCmd(prefetched, m.width, m.palette))
