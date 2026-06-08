@@ -230,9 +230,9 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Build the type badge first so we know its width before sizing labels.
 	var typeStr string
 	if issue.IssueType != "" {
-		typeStr = base.Foreground(d.pal.Number).Render(issue.IssueType)
+		typeStr = base.Foreground(d.pal.Number).Italic(true).Render(issue.IssueType)
 	} else {
-		typeStr = base.Foreground(d.pal.TextFaint).Render("—")
+		typeStr = base.Foreground(d.pal.TextFaint).Italic(true).Render("—")
 	}
 	typeW := lipgloss.Width(typeStr)
 
@@ -254,7 +254,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Reuse accent on line 2 so the bar spans both rows; fill the rest of the indent.
 	indent := accent + base.Render(strings.Repeat(" ", lineIndent-2))
 
-	assigneeStyle := base.Foreground(d.pal.TextMuted)
+	assigneeStyle := base.Foreground(d.pal.TextMuted).Italic(true)
 	var assigneeText string
 	if len(issue.Assignees) > 0 {
 		assigneeText = "@" + joinUsers(issue.Assignees)
@@ -326,7 +326,7 @@ func issueRowLabels(labels []github.Label, bgKey string, maxW int) string {
 		if bgKey != "" {
 			ls = ls.Background(lipgloss.Color(bgKey))
 		}
-		rendered := ls.Render(l.Name)
+		rendered := ls.Italic(true).Render(l.Name)
 		rw := lipgloss.Width(rendered)
 		extra := 0
 		if len(parts) > 0 {

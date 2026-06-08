@@ -86,7 +86,7 @@ func NewKeyButton(key, desc string, color lipgloss.Color) KeyButton {
 func (b KeyButton) Render(theme UITheme, pal Palette) string {
 	bg := themeBg(theme, pal)
 	keySt := lipgloss.NewStyle().Foreground(b.Color).Background(bg).Bold(true)
-	descSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(bg)
+	descSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(bg).Italic(true)
 
 	switch theme {
 
@@ -121,6 +121,7 @@ func (b KeyButton) Render(theme UITheme, pal Palette) string {
 		label := lipgloss.NewStyle().
 			Foreground(pal.TextMuted).
 			Background(bg).
+			Italic(true).
 			Height(3).
 			AlignVertical(lipgloss.Center).
 			Render(" " + b.Desc)

@@ -253,7 +253,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		bgKey = string(d.pal.BgSelected)
 	}
 
-	authorStyle := base.Foreground(d.pal.TextMuted)
+	authorStyle := base.Foreground(d.pal.TextMuted).Italic(true)
 	arrowStyle := base.Foreground(d.pal.Text)
 
 	// Branch direction acts as the right-side badge (like typeStr in issues).
@@ -347,16 +347,16 @@ func prRowChecks(checks []github.CheckRun, bgKey string, pal Palette) string {
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return base.Foreground(pal.CheckFail).Render("✗ failing")
+			return base.Foreground(pal.CheckFail).Italic(true).Render("✗ failing")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return base.Foreground(pal.CheckPending).Render("… pending")
+		return base.Foreground(pal.CheckPending).Italic(true).Render("… pending")
 	}
-	return base.Foreground(pal.CheckPass).Render("✓ passing")
+	return base.Foreground(pal.CheckPass).Italic(true).Render("✓ passing")
 }
 
 // ── PRsModel ──────────────────────────────────────────────────────────────────
