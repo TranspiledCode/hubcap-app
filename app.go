@@ -70,6 +70,29 @@ type autoRefreshTickMsg struct{}
 // timerTickMsg is sent every second to update the timer display
 type timerTickMsg struct{}
 
+// clearThemeToastMsg is sent after a short delay to dismiss the theme toast.
+type clearThemeToastMsg struct{}
+
+func clearThemeToastCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return clearThemeToastMsg{}
+	})
+}
+
+// themeDisplayName returns a human-readable label for a colour theme key.
+func themeDisplayName(key string) string {
+	switch key {
+	case ColorThemeTranspiled:
+		return "Transpiled"
+	case ColorThemeCobalt2:
+		return "Cobalt 2"
+	case ColorThemeImageScoop:
+		return "ImageScoop"
+	default:
+		return "Default"
+	}
+}
+
 // issuePrefetchedMsg carries a prefetched issue detail fetched in the
 // background while the user navigates the list. The gen field is compared
 // against IssuesModel.prefetchGen to discard stale results.
@@ -158,6 +181,10 @@ type AppModel struct {
 	// currentUser is the GitHub login of the authenticated user, fetched once
 	// at startup. Used to distinguish Grab / Take / Drop on the issues list.
 	currentUser string
+
+	// themeToastMsg is set briefly when the user cycles themes with t.
+	// It is cleared after 2 seconds by a clearThemeToastMsg.
+	themeToastMsg string
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters, cache AppCache) AppModel {
@@ -581,8 +608,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prs.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 			m.dashboard.palette = pal
 			m.dashboard.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
+			m.themeToastMsg = "Theme: " + themeDisplayName(m.cfg.ColorTheme)
 			_ = saveConfig(m.cfg)
-			return m, tea.ClearScreen
+			return m, tea.Batch(tea.ClearScreen, clearThemeToastCmd())
 		case key.Matches(msg, keys.Filters) && !m.hasActiveForm():
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
 				m.filterLoading = true
@@ -648,6 +676,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cmds = append(cmds, fetchPRDetailCmd(msg.number), m.prs.spinner.Tick)
 		}
+
+	case clearThemeToastMsg:
+		m.themeToastMsg = ""
+		return m, nil
 
 	case spinner.TickMsg:
 		// Only keep the app-level spinner alive while fetching filter data.
@@ -896,6 +928,11 @@ func footerView(m AppModel, width int, theme UITheme) string {
 	pal := m.palette
 	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
 		return NewKeyButton(b.Help().Key, desc, c)
+	}
+
+	// Theme-change toast — shown briefly after pressing t.
+	if m.themeToastMsg != "" {
+		return footerToast(m.themeToastMsg, false, width, theme, pal)
 	}
 
 	// List-level action feedback (e.g. assign from list) — show toast in place
