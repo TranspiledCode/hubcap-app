@@ -166,7 +166,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
 	} else {
-		base = lipgloss.NewStyle()
+		base = lipgloss.NewStyle().Background(d.pal.BgBody)
 	}
 
 	// Left accent bar (2 chars wide either way so layout stays stable).
@@ -175,7 +175,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
-		accent = "  "
+		accent = base.Render("  ")
 	}
 
 	// ⚑ colored by state: green = open, red = closed.
@@ -273,7 +273,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 			shown = issue.Labels[:maxLabels]
 			overflow = len(issue.Labels) - maxLabels
 		}
-		var bgKey string
+		bgKey := string(d.pal.BgBody)
 		if selected {
 			bgKey = string(d.pal.BgSelected)
 		}

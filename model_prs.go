@@ -184,7 +184,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
 	} else {
-		base = lipgloss.NewStyle()
+		base = lipgloss.NewStyle().Background(d.pal.BgBody)
 	}
 
 	// Left accent bar — reused on both rows so the bar spans the full item height.
@@ -193,7 +193,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
-		accent = "  "
+		accent = base.Render("  ")
 	}
 
 	// ⤴ colored by state: green = open, purple = merged, red = closed, amber = draft.
@@ -248,7 +248,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	// ── Line 2 ──────────────────────────────────────────────────────────────
 	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	const lineIndent = 10
-	var bgKey string
+	bgKey := string(d.pal.BgBody)
 	if selected {
 		bgKey = string(d.pal.BgSelected)
 	}
