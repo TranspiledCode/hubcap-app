@@ -10,11 +10,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // confirmAction prompts the user with a styled yes/no confirmation dialog.
@@ -37,32 +34,6 @@ func confirmAction(title, description string, affirmative string) bool {
 	return confirmed
 }
 
-// withSpinner runs a function while displaying a loading spinner
-func withSpinner(message string, fn func() error) error {
-	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	frame := 0
-
-	done := make(chan error)
-	go func() {
-		done <- fn()
-	}()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case err := <-done:
-			fmt.Print("\033[2K\r")
-			return err
-		case <-ticker.C:
-			fmt.Printf("\r%s %s", spinnerStyle.Render(spinnerFrames[frame%len(spinnerFrames)]), message)
-			frame++
-		}
-	}
-}
-
 func enableRawMode() error {
 	cmd := exec.Command("stty", "raw", "-echo")
 	cmd.Stdin = os.Stdin
@@ -82,42 +53,6 @@ func prompt(reader *bufio.Reader, label string) string {
 		return ""
 	}
 	return strings.TrimRight(value, "\r\n")
-}
-
-var spinnerModel = spinner.New()
-var spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-
-func init() {
-	spinnerModel.Spinner = spinner.Dot
-	spinnerModel.Style = spinnerStyle
-}
-
-// startSpinner starts a spinner in a goroutine and returns a channel to stop it
-func startSpinner(message string) chan struct{} {
-	stopChan := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		frames := spinnerModel.Spinner.Frames
-		i := 0
-		for {
-			select {
-			case <-stopChan:
-				return
-			case <-ticker.C:
-				fmt.Printf("\r%s %s", spinnerStyle.Render(frames[i]), message)
-				i = (i + 1) % len(frames)
-			}
-		}
-	}()
-	return stopChan
-}
-
-func stopSpinner(stopChan chan struct{}) {
-	close(stopChan)
-	fmt.Print("\r")
-	// Clear the spinner line
-	fmt.Print(strings.Repeat(" ", 50) + "\r")
 }
 
 func pause(reader *bufio.Reader) {
@@ -234,96 +169,3 @@ func emptyTabAction(reader *bufio.Reader, state *AppState, switchTarget TabID) s
 	return ""
 }
 
-func menu(reader *bufio.Reader, options []string) string {
-	if len(options) == 0 {
-		return ""
-	}
-
-	selected := 0
-
-	if err := enableRawMode(); err != nil {
-		return numberedMenu(reader, options)
-	}
-	defer disableRawMode()
-
-	renderMenu := func() {
-		fmt.Print("\033[?25l")
-		for index, option := range options {
-			if index == selected {
-				fmt.Printf("%s %s\033[K\r\n", lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(">"), option)
-			} else {
-				fmt.Printf("  %s\033[K\r\n", option)
-			}
-		}
-		fmt.Print("\r\n")
-		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-		cyanStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-		hint := dimStyle.Render("["+cyanStyle.Render("↑↓")+"]") + " " + dimStyle.Render("navigate") +
-			"  ·  " + dimStyle.Render("["+cyanStyle.Render("enter")+"]") + " " + dimStyle.Render("select") +
-			"  ·  " + dimStyle.Render("["+cyanStyle.Render("1-9")+"]") + " " + dimStyle.Render("jump") +
-			"  ·  " + dimStyle.Render("["+cyanStyle.Render("q")+"]") + " " + dimStyle.Render("back")
-		fmt.Print(hint + "\033[K")
-		fmt.Printf("\033[%dF", len(options)+1)
-	}
-
-	renderMenu()
-	defer fmt.Print("\033[?25h")
-
-	buffer := make([]byte, 3)
-
-	for {
-		n, err := os.Stdin.Read(buffer)
-		if err != nil || n == 0 {
-			return ""
-		}
-		key := string(buffer[:n])
-		switch key {
-		case "\r", "\n":
-			fmt.Print("\033[?25h")
-			fmt.Printf("\033[%dB\r\n", len(options)+1)
-			return options[selected]
-		case "q", "Q", "\x03", "\x1b":
-			fmt.Print("\033[?25h")
-			fmt.Printf("\033[%dB\r\n", len(options)+1)
-			return ""
-		case "\x1b[A":
-			selected--
-			if selected < 0 {
-				selected = len(options) - 1
-			}
-			renderMenu()
-		case "\x1b[B":
-			selected++
-			if selected >= len(options) {
-				selected = 0
-			}
-			renderMenu()
-		default:
-			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-				index := int(key[0] - '1')
-				if index >= 0 && index < len(options) {
-					selected = index
-					renderMenu()
-				}
-			}
-		}
-	}
-}
-
-func numberedMenu(reader *bufio.Reader, options []string) string {
-	for index, option := range options {
-		fmt.Printf("%d) %s\n", index+1, option)
-	}
-	for {
-		input := strings.TrimSpace(prompt(reader, "Choose: "))
-		if input == "" {
-			return ""
-		}
-		number, err := strconv.Atoi(input)
-		if err != nil || number < 1 || number > len(options) {
-			fmt.Println("Enter a number from the menu.")
-			continue
-		}
-		return options[number-1]
-	}
-}
