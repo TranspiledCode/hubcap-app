@@ -1207,13 +1207,18 @@ func (m AppModel) View() string {
 	if remaining < 0 {
 		remaining = 0
 	}
-	fill := strings.Repeat("\n", remaining)
+	var fill string
+	if remaining > 0 {
+		blankLine := lipgloss.NewStyle().Background(pal.BgBody).Width(innerW).Render("")
+		fill = strings.Repeat(blankLine+"\n", remaining)
+	}
 
 	inner := header + body + fill + footer
 
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(pal.Title).
+		Background(pal.BgBody).
 		Width(innerW)
 
 	return appBorder.Render(inner)

@@ -38,6 +38,7 @@ type Palette struct {
 	TextFaint lipgloss.Color // separator lines, very dim rules
 
 	// Backgrounds
+	BgBody     lipgloss.Color // main content area (list rows, empty space)
 	BgHeader   lipgloss.Color // top title/version bar
 	BgTabs     lipgloss.Color // tab bar row
 	BgSelected lipgloss.Color // selected list-item highlight
@@ -109,6 +110,7 @@ var paletteDefault = Palette{
 	TextDim:   lipgloss.Color("240"),
 	TextFaint: lipgloss.Color("238"),
 
+	BgBody:     lipgloss.Color(""),
 	BgHeader:   lipgloss.Color("235"),
 	BgTabs:     lipgloss.Color("236"),
 	BgSelected: lipgloss.Color("235"),
@@ -160,6 +162,7 @@ var paletteCobalt2 = Palette{
 	TextDim:   lipgloss.Color("#3a6d82"), // dim blue — timestamps
 	TextFaint: lipgloss.Color("#234E6D"), // Highlight Background 2 — separators
 
+	BgBody:     lipgloss.Color(""),
 	BgHeader:   lipgloss.Color("#122738"), // Darker Blue
 	BgTabs:     lipgloss.Color("#15232D"), // Dark Background
 	BgSelected: lipgloss.Color("#1F4662"), // Highlight Background
@@ -210,6 +213,7 @@ var paletteTranspiled = Palette{
 	TextDim:   lipgloss.Color("#404347"), // darker grey — timestamps
 	TextFaint: lipgloss.Color("#2a2c2e"), // near-invisible — separators
 
+	BgBody:     lipgloss.Color(""),
 	BgHeader:   lipgloss.Color("#141515"), // brand near-black
 	BgTabs:     lipgloss.Color("#1a1b1d"), // slightly lighter
 	BgSelected: lipgloss.Color("#1e2030"), // subtle blue-black tint
@@ -261,6 +265,7 @@ var paletteImageScoop = Palette{
 	TextDim:   lipgloss.Color("#6B7280"), // gray-500 — timestamps
 	TextFaint: lipgloss.Color("#4B5563"), // gray-600 — separators
 
+	BgBody:     lipgloss.Color(""),
 	BgHeader:   lipgloss.Color("#0F172A"), // slate-900 — deepest
 	BgTabs:     lipgloss.Color("#1F2937"), // gray-800
 	BgSelected: lipgloss.Color("#283040"), // dark blue-grey selection
@@ -311,6 +316,7 @@ var paletteParchment = Palette{
 	TextDim:   lipgloss.Color("#9E8E80"), // lighter warm brown — timestamps
 	TextFaint: lipgloss.Color("#C2B4A4"), // faint warm beige — separator lines
 
+	BgBody:     lipgloss.Color("#F2ECD8"), // warm cream — main content area
 	BgHeader:   lipgloss.Color("#E0D9C4"), // warm parchment — title bar
 	BgTabs:     lipgloss.Color("#E8E1CD"), // slightly lighter — tab row
 	BgSelected: lipgloss.Color("#D9D1BC"), // warm tan — selected item
