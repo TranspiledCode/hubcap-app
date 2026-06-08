@@ -53,6 +53,24 @@ type Palette struct {
 	CheckPass    lipgloss.Color
 	CheckFail    lipgloss.Color
 	CheckPending lipgloss.Color
+
+	// Semantic label category colours — used for text in list rows (LabelXxx)
+	// and as pill chip backgrounds in detail strips, with LabelXxxFg as pill text.
+	LabelDanger  lipgloss.Color // bug, critical, high-priority
+	LabelWarn    lipgloss.Color // medium-priority, question
+	LabelSuccess lipgloss.Color // low-priority, passing
+	LabelFeature lipgloss.Color // enhancement, feature
+	LabelDocs    lipgloss.Color // documentation
+	LabelSubtle  lipgloss.Color // effort, size (dim)
+	LabelDefault lipgloss.Color // uncategorised / fallback
+
+	LabelDangerFg  lipgloss.Color // text on top of LabelDanger pill
+	LabelWarnFg    lipgloss.Color // text on top of LabelWarn pill
+	LabelSuccessFg lipgloss.Color // text on top of LabelSuccess pill
+	LabelFeatureFg lipgloss.Color // text on top of LabelFeature pill
+	LabelDocsFg    lipgloss.Color // text on top of LabelDocs pill
+	LabelSubtleFg  lipgloss.Color // text on top of LabelSubtle pill
+	LabelDefaultFg lipgloss.Color // text on top of LabelDefault pill
 }
 
 // ── Named colour-theme constants ──────────────────────────────────────────────
@@ -102,6 +120,22 @@ var paletteDefault = Palette{
 	CheckPass:    lipgloss.Color("83"),
 	CheckFail:    lipgloss.Color("196"),
 	CheckPending: lipgloss.Color("214"),
+
+	LabelDanger:  lipgloss.Color("1"),
+	LabelWarn:    lipgloss.Color("3"),
+	LabelSuccess: lipgloss.Color("2"),
+	LabelFeature: lipgloss.Color("6"),
+	LabelDocs:    lipgloss.Color("5"),
+	LabelSubtle:  lipgloss.Color("8"),
+	LabelDefault: lipgloss.Color("208"),
+
+	LabelDangerFg:  lipgloss.Color("15"),
+	LabelWarnFg:    lipgloss.Color("0"),
+	LabelSuccessFg: lipgloss.Color("0"),
+	LabelFeatureFg: lipgloss.Color("0"),
+	LabelDocsFg:    lipgloss.Color("15"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("0"),
 }
 
 // paletteCobalt2 is based on the West Bostis Cobalt 2 editor theme.
@@ -137,6 +171,22 @@ var paletteCobalt2 = Palette{
 	CheckPass:    lipgloss.Color("#3AD900"),
 	CheckFail:    lipgloss.Color("#FF0088"),
 	CheckPending: lipgloss.Color("#FFC600"), // yellow — pending
+
+	LabelDanger:  lipgloss.Color("#FF628C"),
+	LabelWarn:    lipgloss.Color("#FFC600"),
+	LabelSuccess: lipgloss.Color("#3AD900"),
+	LabelFeature: lipgloss.Color("#2AFFDF"),
+	LabelDocs:    lipgloss.Color("#C792EA"),
+	LabelSubtle:  lipgloss.Color("#546E7A"),
+	LabelDefault: lipgloss.Color("#FF9D00"),
+
+	LabelDangerFg:  lipgloss.Color("0"),
+	LabelWarnFg:    lipgloss.Color("0"),
+	LabelSuccessFg: lipgloss.Color("0"),
+	LabelFeatureFg: lipgloss.Color("0"),
+	LabelDocsFg:    lipgloss.Color("0"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("0"),
 }
 
 // paletteTranspiled uses Transpiled's actual brand colours extracted from
@@ -171,6 +221,22 @@ var paletteTranspiled = Palette{
 	CheckPass:    lipgloss.Color("#3CEE39"),
 	CheckFail:    lipgloss.Color("#F34D2C"),
 	CheckPending: lipgloss.Color("#E7C61E"), // yellow — pending
+
+	LabelDanger:  lipgloss.Color("#FF628C"),
+	LabelWarn:    lipgloss.Color("#FFC600"),
+	LabelSuccess: lipgloss.Color("#3AD900"),
+	LabelFeature: lipgloss.Color("#2AFFDF"),
+	LabelDocs:    lipgloss.Color("#C792EA"),
+	LabelSubtle:  lipgloss.Color("#546E7A"),
+	LabelDefault: lipgloss.Color("#FF9D00"),
+
+	LabelDangerFg:  lipgloss.Color("0"),
+	LabelWarnFg:    lipgloss.Color("0"),
+	LabelSuccessFg: lipgloss.Color("0"),
+	LabelFeatureFg: lipgloss.Color("0"),
+	LabelDocsFg:    lipgloss.Color("0"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("0"),
 }
 
 // paletteImageScoop is based on colours extracted from imagescoop.app.
@@ -206,6 +272,22 @@ var paletteImageScoop = Palette{
 	CheckPass:    lipgloss.Color("#a3e635"),
 	CheckFail:    lipgloss.Color("#ec4899"),
 	CheckPending: lipgloss.Color("#f97316"), // orange — pending
+
+	LabelDanger:  lipgloss.Color("#ec4899"),
+	LabelWarn:    lipgloss.Color("#f97316"),
+	LabelSuccess: lipgloss.Color("#a3e635"),
+	LabelFeature: lipgloss.Color("#06b6d4"),
+	LabelDocs:    lipgloss.Color("#a855f7"),
+	LabelSubtle:  lipgloss.Color("#6B7280"),
+	LabelDefault: lipgloss.Color("#667eea"),
+
+	LabelDangerFg:  lipgloss.Color("15"),
+	LabelWarnFg:    lipgloss.Color("0"),
+	LabelSuccessFg: lipgloss.Color("0"),
+	LabelFeatureFg: lipgloss.Color("0"),
+	LabelDocsFg:    lipgloss.Color("15"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("15"),
 }
 
 // resolvePalette maps a colour-theme name to its Palette, falling back to
