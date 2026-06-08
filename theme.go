@@ -222,13 +222,13 @@ var paletteTranspiled = Palette{
 	CheckFail:    lipgloss.Color("#F34D2C"),
 	CheckPending: lipgloss.Color("#E7C61E"), // yellow — pending
 
-	LabelDanger:  lipgloss.Color("#FF628C"),
-	LabelWarn:    lipgloss.Color("#FFC600"),
-	LabelSuccess: lipgloss.Color("#3AD900"),
-	LabelFeature: lipgloss.Color("#2AFFDF"),
-	LabelDocs:    lipgloss.Color("#C792EA"),
-	LabelSubtle:  lipgloss.Color("#546E7A"),
-	LabelDefault: lipgloss.Color("#FF9D00"),
+	LabelDanger:  lipgloss.Color("#FF0088"),  // hot pink — Transpiled Danger
+	LabelWarn:    lipgloss.Color("#FFC600"),  // yellow — Transpiled CheckPending
+	LabelSuccess: lipgloss.Color("#3AD900"),  // neon green — Transpiled Action
+	LabelFeature: lipgloss.Color("#2AFFDF"),  // mint — Transpiled Accent
+	LabelDocs:    lipgloss.Color("#C792EA"),  // soft violet — distinct docs colour
+	LabelSubtle:  lipgloss.Color("#546E7A"),  // blue-grey — dim effort/size
+	LabelDefault: lipgloss.Color("#FF9D00"),  // orange — Transpiled Meta
 
 	LabelDangerFg:  lipgloss.Color("0"),
 	LabelWarnFg:    lipgloss.Color("0"),
