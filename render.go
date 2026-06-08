@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -879,6 +880,16 @@ func renderMarkdown(body string, width int, docBg string) string {
 			cfg := glamourstyles.LightStyleConfig
 			cfg.Document.StylePrimitive.BackgroundColor = strPtr(docBg)
 			cfg.Document.Margin = nil
+			// Deep-copy the Chroma block and set its background to docBg so that
+			// code blocks render consistently on the parchment background after
+			// injectDocBg replaces every \x1b[0m with \x1b[0m+<parchment bg>.
+			// Without this, chroma tokens (which only carry fg codes) would
+			// inherit the injected parchment bg instead of the dark code-block bg.
+			if cfg.CodeBlock.Chroma != nil {
+				chromaCopy := *cfg.CodeBlock.Chroma
+				chromaCopy.Background.BackgroundColor = strPtr(docBg)
+				cfg.CodeBlock.Chroma = &chromaCopy
+			}
 			opt = glamour.WithStyles(cfg)
 		} else {
 			// Dark theme: always use the standard dark style, never auto-detect.
@@ -898,7 +909,33 @@ func renderMarkdown(body string, width int, docBg string) string {
 	if err != nil {
 		return body
 	}
+	if docBg != "" {
+		out = injectDocBg(out, docBg)
+	}
 	return out
+}
+
+// injectDocBg replaces every ANSI reset sequence in s with a reset followed by
+// an explicit 24-bit background set to docBg. This ensures that plain-space
+// padding emitted by lipgloss (e.g. table cell margins) inherits the intended
+// background instead of the terminal default after a reset.
+func injectDocBg(s, docBg string) string {
+	r, g, b := hexToRGB(docBg)
+	bgCode := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+bgCode)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+bgCode)
+	return bgCode + s
+}
+
+// hexToRGB converts a CSS hex color string (e.g. "#F2ECD8" or "F2ECD8") to
+// R, G, B integer components in the range [0, 255].
+func hexToRGB(hex string) (r, g, b int) {
+	hex = strings.TrimPrefix(hex, "#")
+	val, err := strconv.ParseInt(hex, 16, 32)
+	if err != nil {
+		return 0, 0, 0
+	}
+	return int((val >> 16) & 0xFF), int((val >> 8) & 0xFF), int(val & 0xFF)
 }
 
 func strPtr(s string) *string { return &s }
