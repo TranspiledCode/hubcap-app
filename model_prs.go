@@ -84,6 +84,36 @@ func (m PRsModel) silentFetchCmd() tea.Cmd {
 	}
 }
 
+// prefetchNextItemsCmd fires background detail fetches for the next 2 items
+// after the current cursor position. Results are tagged with the current
+// prefetchGen so stale results from earlier cursor positions are discarded.
+func (m PRsModel) prefetchNextItemsCmd() tea.Cmd {
+	items := m.list.Items()
+	curIdx := m.list.Index()
+	gen := m.prefetchGen
+
+	var cmds []tea.Cmd
+	for i := curIdx + 1; i <= curIdx+2 && i < len(items); i++ {
+		item, ok := items[i].(prListItem)
+		if !ok {
+			continue
+		}
+		// Skip items already in the prefetch cache.
+		if _, cached := m.prefetchedDetails[item.pr.Number]; cached {
+			continue
+		}
+		num := item.pr.Number
+		cmds = append(cmds, func() tea.Msg {
+			pr, err := github.FetchPR(num)
+			if err != nil {
+				return nil // swallow silently — prefetch is best-effort
+			}
+			return prPrefetchedMsg{number: num, pr: pr, gen: gen}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
 // ── prFormType ────────────────────────────────────────────────────────────────
 
 type prFormType int
@@ -360,6 +390,14 @@ type PRsModel struct {
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
+
+	// Detail prefetch: while the user navigates the list, the next 2 items
+	// are fetched in the background and stored here. When the user presses
+	// Enter, the cached detail is used immediately — no loading spinner.
+	// prefetchGen is incremented on each cursor move; stale goroutine results
+	// are discarded when their gen no longer matches.
+	prefetchGen       int
+	prefetchedDetails map[int]github.PullRequest
 }
 
 func newPRsModel(filters github.PRFilters) PRsModel {
@@ -501,6 +539,16 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	// ── Normal update ─────────────────────────────────────────────────────────
 	switch msg := msg.(type) {
+	case prPrefetchedMsg:
+		// Discard results from stale cursor positions.
+		if msg.gen == m.prefetchGen {
+			if m.prefetchedDetails == nil {
+				m.prefetchedDetails = make(map[int]github.PullRequest)
+			}
+			m.prefetchedDetails[msg.number] = msg.pr
+		}
+		return m, nil
+
 	case prsFetchedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -515,6 +563,9 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetItems(items)
 		m.loaded = true
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
+		// New list data invalidates prefetched details.
+		m.prefetchedDetails = make(map[int]github.PullRequest)
+		m.prefetchGen++
 
 	case prFetchedMsg:
 		m.loadingDetail = false
@@ -782,17 +833,36 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 		if key.Matches(msg, keys.Open) {
 			if item, ok := m.list.SelectedItem().(prListItem); ok {
-				m.loadingDetail = true
-				cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
-				cmds = append(cmds, m.spinner.Tick)
+				// Use prefetched detail immediately if available — no spinner needed.
+				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
+					m.detailPR = prefetched
+					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
+					m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+					m.showDetail = true
+					delete(m.prefetchedDetails, item.pr.Number)
+					cmds = append(cmds, renderPRContentCmd(prefetched, m.width))
+				} else {
+					m.loadingDetail = true
+					cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
+					cmds = append(cmds, m.spinner.Tick)
+				}
 			}
 		}
 	}
 
 	if !m.loading && !m.loadingDetail && !m.showDetail {
+		prevIdx := m.list.Index()
 		var cmd tea.Cmd
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
+		// When cursor moves, kick off background prefetch for the next 2 items.
+		if m.list.Index() != prevIdx {
+			if m.prefetchedDetails == nil {
+				m.prefetchedDetails = make(map[int]github.PullRequest)
+			}
+			m.prefetchGen++
+			cmds = append(cmds, m.prefetchNextItemsCmd())
+		}
 	}
 
 	return m, tea.Batch(cmds...)
