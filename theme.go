@@ -1,6 +1,6 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Five named
+// A Palette holds every semantic colour role used across the UI. Six named
 // palettes are provided:
 //
 //	"default"    — the original dark terminal look (amber + green)
@@ -8,6 +8,7 @@
 //	"nord"       — Nord colour scheme (cool blue-grey tones)
 //	"catppuccin" — Catppuccin Mocha (warm dark pastels)
 //	"transpiled" — Transpiled brand colours (electric blue + violet + neon green)
+//	"cobalt2"    — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
@@ -64,6 +65,7 @@ const (
 	ColorThemeNord       = "nord"
 	ColorThemeCatppuccin = "catppuccin"
 	ColorThemeTranspiled = "transpiled"
+	ColorThemeCobalt2    = "cobalt2"
 )
 
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
@@ -73,6 +75,7 @@ var colorThemeOrder = []string{
 	ColorThemeNord,
 	ColorThemeCatppuccin,
 	ColorThemeTranspiled,
+	ColorThemeCobalt2,
 }
 
 // ── Palette definitions ───────────────────────────────────────────────────────
@@ -197,6 +200,41 @@ var paletteCatppuccin = Palette{
 	CheckPending: lipgloss.Color("#f9e2af"),
 }
 
+// paletteCobalt2 is based on the West Bostis Cobalt 2 editor theme.
+// Backgrounds are the deep navy blues from the theme; accents use the
+// iconic mint (#2AFFDF), yellow (#FFC600), hot pink (#FF0088), and
+// neon green (#3AD900).
+var paletteCobalt2 = Palette{
+	Action: lipgloss.Color("#3AD900"), // neon green — "do it" actions
+	Meta:   lipgloss.Color("#FF9D00"), // orange accent — structural / nav
+	Danger: lipgloss.Color("#FF0088"), // hot pink — destructive
+
+	Accent: lipgloss.Color("#2AFFDF"), // mint — cursor bar, spinner
+	Title:  lipgloss.Color("#FFC600"), // yellow accent — titles, app border
+	Number: lipgloss.Color("#9EFFFF"), // light cyan — issue/PR numbers
+
+	Text:      lipgloss.Color("#cce7f0"), // derived soft blue-white — body text
+	TextBold:  lipgloss.Color("#9EFFFF"), // light cyan — selected / highlighted
+	TextMuted: lipgloss.Color("#5a9fb8"), // medium steel blue — authors, secondary
+	TextDim:   lipgloss.Color("#3a6d82"), // dim blue — timestamps
+	TextFaint: lipgloss.Color("#234E6D"), // Highlight Background 2 — separators
+
+	BgHeader:   lipgloss.Color("#122738"), // Darker Blue
+	BgTabs:     lipgloss.Color("#15232D"), // Dark Background
+	BgSelected: lipgloss.Color("#1F4662"), // Highlight Background
+	BgFooter:   lipgloss.Color("#122738"),
+	BgComfy:    lipgloss.Color("#0D3A58"), // Off Blue
+
+	StatusOpen:   lipgloss.Color("#3AD900"), // green — open
+	StatusClosed: lipgloss.Color("#FF628C"), // blush pink — closed
+	StatusMerged: lipgloss.Color("#2AFFDF"), // mint — merged
+	StatusDraft:  lipgloss.Color("#FF9D00"), // orange — draft
+
+	CheckPass:    lipgloss.Color("#3AD900"),
+	CheckFail:    lipgloss.Color("#FF0088"),
+	CheckPending: lipgloss.Color("#FFC600"), // yellow — pending
+}
+
 // paletteTranspiled uses Transpiled's actual brand colours extracted from
 // transpiled.com: electric blue (#0098E4), royal blue (#123EDB), vivid
 // violet (#D05FEC), and neon green (#3CEE39) on a near-black background.
@@ -243,6 +281,8 @@ func resolvePalette(s string) Palette {
 		return paletteCatppuccin
 	case ColorThemeTranspiled:
 		return paletteTranspiled
+	case ColorThemeCobalt2:
+		return paletteCobalt2
 	default:
 		return paletteDefault
 	}
