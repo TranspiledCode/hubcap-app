@@ -1,12 +1,13 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Four named
+// A Palette holds every semantic colour role used across the UI. Five named
 // palettes are provided:
 //
 //	"default"    — the original dark terminal look (amber + green)
 //	"dracula"    — Dracula colour scheme (purple accent, vibrant)
 //	"nord"       — Nord colour scheme (cool blue-grey tones)
 //	"catppuccin" — Catppuccin Mocha (warm dark pastels)
+//	"transpiled" — Transpiled brand colours (electric blue + violet + neon green)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
@@ -62,6 +63,7 @@ const (
 	ColorThemeDracula    = "dracula"
 	ColorThemeNord       = "nord"
 	ColorThemeCatppuccin = "catppuccin"
+	ColorThemeTranspiled = "transpiled"
 )
 
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
@@ -70,6 +72,7 @@ var colorThemeOrder = []string{
 	ColorThemeDracula,
 	ColorThemeNord,
 	ColorThemeCatppuccin,
+	ColorThemeTranspiled,
 }
 
 // ── Palette definitions ───────────────────────────────────────────────────────
@@ -194,6 +197,40 @@ var paletteCatppuccin = Palette{
 	CheckPending: lipgloss.Color("#f9e2af"),
 }
 
+// paletteTranspiled uses Transpiled's actual brand colours extracted from
+// transpiled.com: electric blue (#0098E4), royal blue (#123EDB), vivid
+// violet (#D05FEC), and neon green (#3CEE39) on a near-black background.
+var paletteTranspiled = Palette{
+	Action: lipgloss.Color("#3CEE39"), // neon green — "do it" actions
+	Meta:   lipgloss.Color("#D05FEC"), // vivid violet — structural / nav
+	Danger: lipgloss.Color("#F34D2C"), // orange-red — destructive
+
+	Accent: lipgloss.Color("#0098E4"), // electric blue — cursor bar, spinner
+	Title:  lipgloss.Color("#D05FEC"), // violet — titles, app border
+	Number: lipgloss.Color("#7faaf0"), // cornflower — issue/PR numbers
+
+	Text:      lipgloss.Color("#B7B8BA"), // mid grey — body text
+	TextBold:  lipgloss.Color("#FAF9F8"), // off-white — selected / highlighted
+	TextMuted: lipgloss.Color("#6E7275"), // dim grey — authors, secondary
+	TextDim:   lipgloss.Color("#404347"), // darker grey — timestamps
+	TextFaint: lipgloss.Color("#2a2c2e"), // near-invisible — separators
+
+	BgHeader:   lipgloss.Color("#141515"), // brand near-black
+	BgTabs:     lipgloss.Color("#1a1b1d"), // slightly lighter
+	BgSelected: lipgloss.Color("#1e2030"), // subtle blue-black tint
+	BgFooter:   lipgloss.Color("#141515"),
+	BgComfy:    lipgloss.Color("#0f1010"),
+
+	StatusOpen:   lipgloss.Color("#3CEE39"), // neon green — open
+	StatusClosed: lipgloss.Color("#F34D2C"), // orange-red — closed
+	StatusMerged: lipgloss.Color("#D05FEC"), // violet — merged (brand)
+	StatusDraft:  lipgloss.Color("#ED951A"), // orange — draft
+
+	CheckPass:    lipgloss.Color("#3CEE39"),
+	CheckFail:    lipgloss.Color("#F34D2C"),
+	CheckPending: lipgloss.Color("#E7C61E"), // yellow — pending
+}
+
 // resolvePalette maps a colour-theme name to its Palette, falling back to
 // paletteDefault for unknown / empty values.
 func resolvePalette(s string) Palette {
@@ -204,6 +241,8 @@ func resolvePalette(s string) Palette {
 		return paletteNord
 	case ColorThemeCatppuccin:
 		return paletteCatppuccin
+	case ColorThemeTranspiled:
+		return paletteTranspiled
 	default:
 		return paletteDefault
 	}

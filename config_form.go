@@ -65,10 +65,11 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 			Title("Colour theme").
 			Description("Accent and status colours. Press t anywhere to cycle.").
 			Options(
-				huh.NewOption("Default  — amber & green", "default"),
-				huh.NewOption("Dracula  — purple accent, vibrant", "dracula"),
-				huh.NewOption("Nord     — cool blue-grey tones", "nord"),
+				huh.NewOption("Default    — amber & green", "default"),
+				huh.NewOption("Dracula    — purple accent, vibrant", "dracula"),
+				huh.NewOption("Nord       — cool blue-grey tones", "nord"),
 				huh.NewOption("Catppuccin — warm dark pastels", "catppuccin"),
+				huh.NewOption("Transpiled — electric blue & violet", "transpiled"),
 			).
 			Value(&vals.ColorTheme),
 		huh.NewSelect[string]().
