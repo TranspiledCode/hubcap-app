@@ -63,12 +63,12 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		Padding(0, 2)
 	tabFillStyle := lipgloss.NewStyle().Background(tabBg)
 
-	// Filter bar — transparent background, matches the body surface.
-	filterKeyStyle := lipgloss.NewStyle().Foreground(pal.TextMuted)
-	filterValStyle := lipgloss.NewStyle().Foreground(pal.Text)
-	filterValOnStyle := lipgloss.NewStyle().Foreground(pal.Accent)
-	filterSepStyle := lipgloss.NewStyle().Foreground(pal.TextFaint)
-	filterHintStyle := lipgloss.NewStyle().Foreground(pal.TextDim)
+	// Filter bar — body background so light themes don't show terminal default.
+	filterKeyStyle := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	filterValStyle := lipgloss.NewStyle().Foreground(pal.Text).Background(pal.BgBody)
+	filterValOnStyle := lipgloss.NewStyle().Foreground(pal.Accent).Background(pal.BgBody)
+	filterSepStyle := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody)
+	filterHintStyle := lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody)
 
 	// ── Line 1: version · centered title · auto-refresh · [?] help ─────────
 	verText := "v" + version
@@ -150,9 +150,9 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		fill = 0
 	}
 	b.WriteString(tabRow.String() + tabFillStyle.Render(strings.Repeat(" ", fill)) + "\n")
-	// ▀ half-space: top half = tab bg, bottom half = transparent body.
+	// ▀ half-space: top half = tab bg, bottom half = body bg.
 	// Provides a visual half-line of breathing room below the tab bar in all views.
-	b.WriteString(lipgloss.NewStyle().Foreground(pal.BgTabs).Render(strings.Repeat("▀", width)) + "\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(pal.BgTabs).Background(pal.BgBody).Render(strings.Repeat("▀", width)) + "\n")
 
 	// ── Line 4+: filter/context bar (list views only) ──────────────────────
 	if !detailActive {
@@ -185,7 +185,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
 				filterHintStyle.Render("   [f] to change filters")
 		case TabDashboard:
-			countStyle := lipgloss.NewStyle().Foreground(pal.Accent).Bold(true)
+			countStyle := lipgloss.NewStyle().Foreground(pal.Accent).Bold(true).Background(pal.BgBody)
 			countOrDash := func(n int) string {
 				if n == 0 {
 					return filterValStyle.Render("0")
@@ -199,8 +199,8 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		}
 		b.WriteString(filterContent + "\n")
 		// Separator between filter bar and content body, plus a blank line of breathing room.
-		b.WriteString(lipgloss.NewStyle().Foreground(pal.TextFaint).Render(strings.Repeat("─", width)) + "\n")
-		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody).Render(strings.Repeat("─", width)) + "\n")
+		b.WriteString(lipgloss.NewStyle().Background(pal.BgBody).Width(width).Render("") + "\n")
 	}
 
 	return b.String()
