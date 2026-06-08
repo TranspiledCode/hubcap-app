@@ -147,8 +147,8 @@ func (i issueListItem) FilterValue() string {
 
 type issueDelegate struct{ pal Palette }
 
-func (d issueDelegate) Height() int                             { return 2 }
-func (d issueDelegate) Spacing() int                            { return 1 }
+func (d issueDelegate) Height() int                             { return 3 }
+func (d issueDelegate) Spacing() int                            { return 0 }
 func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -300,7 +300,8 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		line2 += dimSep + labelPart
 	}
 	line2 += line2Fill + typeStr + base.Render(" ")
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
+	spacer := lipgloss.NewStyle().Background(d.pal.BgBody).Width(width).Render("")
+	fmt.Fprintf(w, "%s\n%s\n%s", line1, line2, spacer)
 }
 
 // issueRowLabels renders a short colored label string for a list row.
@@ -406,6 +407,9 @@ func newIssuesModel(filters github.Filters, pal Palette) IssuesModel {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	l.Styles.NoItems = l.Styles.NoItems.Background(pal.BgBody).Foreground(pal.TextDim)
+	l.Styles.FilterPrompt = l.Styles.FilterPrompt.Background(pal.BgBody).Foreground(pal.TextMuted)
+	l.Styles.FilterCursor = l.Styles.FilterCursor.Background(pal.BgBody).Foreground(pal.Accent)
 	// Disable the list's built-in quit keybindings (q and esc) so they don't
 	// call tea.Quit directly and bypass our confirmation prompt.
 	// Must use DisableQuitKeybindings() — not SetEnabled(false) — because the
@@ -937,7 +941,7 @@ func (m IssuesModel) View() string {
 		return b.String()
 	}
 
-	b.WriteString(lipgloss.NewStyle().Margin(0, 2).Render(m.list.View()))
+	b.WriteString(lipgloss.NewStyle().Padding(0, 2).Background(m.palette.BgBody).Render(m.list.View()))
 	return b.String()
 }
 
