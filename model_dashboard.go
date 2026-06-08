@@ -273,9 +273,10 @@ func (m DashboardModel) View() string {
 	pal := m.palette
 	selectedBg := pal.BgSelected
 
-	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(pal.Meta)
-	countStyle := lipgloss.NewStyle().Foreground(pal.StatusMerged).Bold(true)
-	ruleStyle := lipgloss.NewStyle().Foreground(pal.TextFaint)
+	bgSt := lipgloss.NewStyle().Background(pal.BgBody)
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(pal.Meta).Background(pal.BgBody)
+	countStyle := lipgloss.NewStyle().Foreground(pal.StatusMerged).Bold(true).Background(pal.BgBody)
+	ruleStyle := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody)
 	// stateIcon returns the type icon colored by state.
 	// ⚑ = issue (flag), ⤴ = PR (upward arrow). Color = state.
 	// These are kept as named color lookups; actual rendering now happens
@@ -328,7 +329,7 @@ func (m DashboardModel) View() string {
 			accent = lipgloss.NewStyle().Foreground(pal.Accent).Background(selectedBg).Render("▌") +
 				base.Render(" ")
 		} else {
-			accent = "  "
+			accent = base.Render("  ")
 		}
 
 		numStyle := base.Foreground(pal.Number)
@@ -378,7 +379,7 @@ func (m DashboardModel) View() string {
 
 	// halfSpace is a blank line that blends with the body background, used as
 	// a spacing row between section headers and items.
-	halfSpace := strings.Repeat(" ", width)
+	halfSpace := bgSt.Width(width).Render("")
 
 	// ── Render rows ───────────────────────────────────────────────────────────
 	firstSection := true
@@ -386,7 +387,7 @@ func (m DashboardModel) View() string {
 		if row.isHeader {
 			// Blank line + half-space before every section except the first.
 			if !firstSection {
-				b.WriteString("\n")
+				b.WriteString(bgSt.Width(width).Render("") + "\n")
 				b.WriteString(halfSpace + "\n")
 			}
 			firstSection = false
@@ -410,7 +411,7 @@ func (m DashboardModel) View() string {
 		if selected {
 			base = lipgloss.NewStyle().Background(selectedBg)
 		} else {
-			base = lipgloss.NewStyle()
+			base = lipgloss.NewStyle().Background(pal.BgBody)
 		}
 		dimSep := base.Foreground(pal.TextFaint).Render("  ·  ")
 
@@ -470,7 +471,7 @@ func (m DashboardModel) View() string {
 				shownLabels = iss.Labels[:dashMaxLabels]
 				labelOverflow = len(iss.Labels) - dashMaxLabels
 			}
-			var bgKey string
+			bgKey := string(pal.BgBody)
 			if selected {
 				bgKey = string(pal.BgSelected)
 			}
@@ -491,5 +492,5 @@ func (m DashboardModel) View() string {
 		}
 	}
 
-	return lipgloss.NewStyle().Margin(0, 2).Render(b.String())
+	return lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(b.String())
 }
