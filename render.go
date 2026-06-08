@@ -870,14 +870,22 @@ func renderMarkdown(body string, width int, docBg string) string {
 	} else {
 		var opt glamour.TermRendererOption
 		if docBg != "" {
-			// Light theme: copy the light style and set the document background
-			// to match the surrounding area. Glamour then emits explicit bg codes
-			// throughout, so inline resets don't bleed the terminal default through.
+			// Light theme: copy the light style, set the document background to
+			// match the surrounding area so ANSI resets don't bleed through, and
+			// zero the document margin (glamour renders it with the *parent* block
+			// style = terminal default, causing dark left bars). The outer
+			// Padding(0,2).Background(BgBody) in the view functions provides
+			// equivalent indentation with the correct background.
 			cfg := glamourstyles.LightStyleConfig
 			cfg.Document.StylePrimitive.BackgroundColor = strPtr(docBg)
+			cfg.Document.Margin = nil
 			opt = glamour.WithStyles(cfg)
 		} else {
-			opt = glamour.WithAutoStyle()
+			// Dark theme: always use the standard dark style, never auto-detect.
+			// Auto-detection (termenv.HasDarkBackground) can return false on some
+			// terminals, causing glamour to pick the light style and making the
+			// viewport body appear white on dark-palette themes.
+			opt = glamour.WithStandardStyle("dark")
 		}
 		var err error
 		r, err = glamour.NewTermRenderer(opt, glamour.WithWordWrap(width))
