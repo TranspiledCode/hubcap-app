@@ -42,6 +42,7 @@ type keyMap struct {
 	PRCheckout key.Binding
 	PRMerge    key.Binding
 	PRClose    key.Binding
+	PRReview   key.Binding
 }
 
 // keys is the single global key-binding registry used throughout the app.
@@ -81,4 +82,5 @@ var keys = keyMap{
 	PRCheckout: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout")),
 	PRMerge:    key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge")),
 	PRClose:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close/reopen")),
+	PRReview:   key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "request reviewer")),
 }

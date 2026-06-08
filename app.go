@@ -642,34 +642,57 @@ func detailActionFooter(m AppModel, width int) string {
 	var btns []KeyButton
 	switch {
 	case m.activeTab == TabIssues && m.issues.showDetail:
-		closeLabel := "close"
 		if strings.EqualFold(m.issues.detailIssue.State, "closed") {
-			closeLabel = "reopen"
-		}
-		assignLabel := "assign"
-		if isMeAssigned(m.issues.detailIssue.Assignees, m.currentUser) {
-			assignLabel = "unassign"
-		}
-		btns = []KeyButton{
-			kb(keys.Back, "back", ColorMeta),
-			kb(keys.IssueClose, closeLabel, ColorDanger),
-			kb(keys.IssueAssign, assignLabel, ColorAction),
-			kb(keys.IssueDevelop, "develop", ColorAction),
-			kb(keys.Browser, "browser", ColorMeta),
-			kb(keys.Help, "more actions", ColorMeta),
+			// Closed issue: only allow back, browser, help, and reopen.
+			btns = []KeyButton{
+				kb(keys.Back, "back", ColorMeta),
+				kb(keys.Browser, "browser", ColorMeta),
+				kb(keys.Help, "more actions", ColorMeta),
+				kb(keys.IssueClose, "reopen", ColorDanger),
+			}
+		} else {
+			assignLabel := "assign"
+			if isMeAssigned(m.issues.detailIssue.Assignees, m.currentUser) {
+				assignLabel = "unassign"
+			}
+			btns = []KeyButton{
+				kb(keys.Back, "back", ColorMeta),
+				kb(keys.IssueClose, "close", ColorDanger),
+				kb(keys.IssueAssign, assignLabel, ColorAction),
+				kb(keys.IssueDevelop, "develop", ColorAction),
+				kb(keys.Browser, "browser", ColorMeta),
+				kb(keys.Help, "more actions", ColorMeta),
+			}
 		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
-		closeLabel := "close"
-		if strings.EqualFold(m.prs.detailPR.State, "closed") {
-			closeLabel = "reopen"
-		}
-		btns = []KeyButton{
-			kb(keys.Back, "back", ColorMeta),
-			kb(keys.PRClose, closeLabel, ColorDanger),
-			kb(keys.PRCheckout, "checkout", ColorAction),
-			kb(keys.PRMerge, "merge", ColorAction),
-			kb(keys.Browser, "browser", ColorMeta),
-			kb(keys.Help, "more actions", ColorMeta),
+		pr := m.prs.detailPR
+		switch {
+		case strings.EqualFold(pr.State, "merged"):
+			// Merged PR: no further actions — can't reopen, checkout, or merge again.
+			btns = []KeyButton{
+				kb(keys.Back, "back", ColorMeta),
+				kb(keys.Browser, "browser", ColorMeta),
+				kb(keys.Help, "more actions", ColorMeta),
+			}
+		case strings.EqualFold(pr.State, "closed"):
+			// Closed (not merged) PR: only reopen is meaningful.
+			btns = []KeyButton{
+				kb(keys.Back, "back", ColorMeta),
+				kb(keys.Browser, "browser", ColorMeta),
+				kb(keys.Help, "more actions", ColorMeta),
+				kb(keys.PRClose, "reopen", ColorDanger),
+			}
+		default:
+			// Open or draft PR: full action set.
+			btns = []KeyButton{
+				kb(keys.Back, "back", ColorMeta),
+				kb(keys.PRClose, "close", ColorDanger),
+				kb(keys.PRCheckout, "checkout", ColorAction),
+				kb(keys.PRMerge, "merge", ColorAction),
+				kb(keys.PRReview, "reviewer", ColorAction),
+				kb(keys.Browser, "browser", ColorMeta),
+				kb(keys.Help, "more actions", ColorMeta),
+			}
 		}
 	}
 
@@ -837,6 +860,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(line(keys.PRCheckout, "checkout branch locally") + "\n")
 	buf.WriteString(line(keys.PRMerge, "merge pull request") + "\n")
 	buf.WriteString(line(keys.PRClose, "close / reopen pull request") + "\n")
+	buf.WriteString(line(keys.PRReview, "request a reviewer") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
