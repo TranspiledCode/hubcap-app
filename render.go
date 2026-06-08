@@ -157,20 +157,21 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	// ── Line 4+: filter/context bar (list views only) ──────────────────────
 	if !detailActive {
 		sep := filterSepStyle.Render("  │  ")
+		indent := filterKeyStyle.Render("  ")
 		fmtFilter := func(key, val string) string {
 			active := val != "" && val != "any"
 			v := filterValStyle
 			if active {
 				v = filterValOnStyle
 			}
-			return filterKeyStyle.Render(key+":") + " " + v.Render(val)
+			return filterKeyStyle.Render(key+": ") + v.Render(val)
 		}
 
 		var filterContent string
 		switch activeTab {
 		case TabIssues:
 			f := issueFilters
-			filterContent = "  " +
+			filterContent = indent +
 				fmtFilter("state", displayAny(f.State)) + sep +
 				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
 				fmtFilter("label", displayAny(f.Label)) + sep +
@@ -178,7 +179,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				filterHintStyle.Render("   [f] to change filters")
 		case TabPRs:
 			f := prFilters
-			filterContent = "  " +
+			filterContent = indent +
 				fmtFilter("state", displayAny(f.State)) + sep +
 				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
 				fmtFilter("label", displayAny(f.Label)) + sep +
@@ -192,7 +193,7 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				}
 				return countStyle.Render(fmt.Sprintf("%d", n))
 			}
-			filterContent = "  " +
+			filterContent = indent +
 				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
 				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" open PRs") + sep +
 				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned")
