@@ -166,8 +166,8 @@ func (p prListItem) FilterValue() string {
 
 type prDelegate struct{ pal Palette }
 
-func (d prDelegate) Height() int                             { return 2 }
-func (d prDelegate) Spacing() int                            { return 1 }
+func (d prDelegate) Height() int                             { return 3 }
+func (d prDelegate) Spacing() int                            { return 0 }
 func (d prDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -330,7 +330,8 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	line2 += line2Fill + branchStr + base.Render(" ")
 
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
+	spacer := lipgloss.NewStyle().Background(d.pal.BgBody).Width(width).Render("")
+	fmt.Fprintf(w, "%s\n%s\n%s", line1, line2, spacer)
 }
 
 // prRowChecks returns a compact colored check-status symbol for a list row.
@@ -418,6 +419,9 @@ func newPRsModel(filters github.PRFilters, pal Palette) PRsModel {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	l.Styles.NoItems = l.Styles.NoItems.Background(pal.BgBody).Foreground(pal.TextDim)
+	l.Styles.FilterPrompt = l.Styles.FilterPrompt.Background(pal.BgBody).Foreground(pal.TextMuted)
+	l.Styles.FilterCursor = l.Styles.FilterCursor.Background(pal.BgBody).Foreground(pal.Accent)
 	// Disable the list's built-in quit keybindings — must use this method, not
 	// SetEnabled(false), which gets overridden on every item load.
 	l.DisableQuitKeybindings()
@@ -974,7 +978,7 @@ func (m PRsModel) View() string {
 		return b.String()
 	}
 
-	b.WriteString(lipgloss.NewStyle().Margin(0, 2).Render(m.list.View()))
+	b.WriteString(lipgloss.NewStyle().Padding(0, 2).Background(m.palette.BgBody).Render(m.list.View()))
 	return b.String()
 }
 
