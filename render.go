@@ -317,7 +317,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, pal Pale
 		}
 		return s.Foreground(pal.StatusOpen).Bold(true).Render("OPEN")
 	}()
-	stateDot := s.Render(stateIndicator(issue.State, false))
+	stateDot := s.Render(stateIndicator(issue.State, false, pal))
 	stateStr := stateDot + s.Render("  ") + stateLabel + s.Render("  ")
 
 	numW := lipgloss.Width(numStr)
@@ -357,7 +357,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, pal Pale
 		}
 		pills := make([]string, len(labels))
 		for i, l := range labels {
-			pills[i] = labelPill(bg, l.Name)
+			pills[i] = labelPill(bg, l.Name, pal)
 		}
 		return strings.Join(pills, "") + s.Render("  ")
 	}
@@ -386,7 +386,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, pal Pale
 		}
 		overflow := len(issue.Labels) - len(shown)
 		for _, i := range shown {
-			collapsedPill += labelPill(bg, issue.Labels[i].Name)
+			collapsedPill += labelPill(bg, issue.Labels[i].Name, pal)
 		}
 		if overflow > 0 {
 			collapsedPill += s.Foreground(pal.Text).Render(fmt.Sprintf(" +%d", overflow))
@@ -498,7 +498,7 @@ func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 			return s.Foreground(pal.StatusOpen).Bold(true).Render("OPEN")
 		}
 	}()
-	stateDot := s.Render(stateIndicator(pr.State, pr.IsDraft))
+	stateDot := s.Render(stateIndicator(pr.State, pr.IsDraft, pal))
 	stateStr := stateDot + s.Render("  ") + stateLabel + s.Render("  ")
 
 	numW := lipgloss.Width(numStr)
@@ -534,11 +534,11 @@ func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 
 	switch pr.ReviewDecision {
 	case "APPROVED":
-		rightChips = append(rightChips, prStatusPill(bg, "2", "0", "✓ approved"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelSuccess, pal.LabelSuccessFg, "✓ approved"))
 	case "CHANGES_REQUESTED":
-		rightChips = append(rightChips, prStatusPill(bg, "1", "15", "✗ changes"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelDanger, pal.LabelDangerFg, "✗ changes"))
 	case "REVIEW_REQUIRED":
-		rightChips = append(rightChips, prStatusPill(bg, "3", "0", "⟳ review"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelWarn, pal.LabelWarnFg, "⟳ review"))
 	}
 
 	if len(pr.StatusRollup) > 0 {
@@ -552,16 +552,16 @@ func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 		}
 		switch {
 		case failing:
-			rightChips = append(rightChips, prStatusPill(bg, "1", "15", "✗ failing"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelDanger, pal.LabelDangerFg, "✗ failing"))
 		case pending:
-			rightChips = append(rightChips, prStatusPill(bg, "3", "0", "… pending"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelWarn, pal.LabelWarnFg, "… pending"))
 		default:
-			rightChips = append(rightChips, prStatusPill(bg, "2", "0", "✓ passing"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelSuccess, pal.LabelSuccessFg, "✓ passing"))
 		}
 	}
 
 	for _, l := range pr.Labels {
-		rightChips = append(rightChips, labelPill(bg, l.Name))
+		rightChips = append(rightChips, labelPill(bg, l.Name, pal))
 	}
 
 	var rightStr string
@@ -591,84 +591,79 @@ func formatDurationShort(d time.Duration) string {
 }
 
 
-func stateIndicator(state string, isDraft bool) string {
+func stateIndicator(state string, isDraft bool, pal Palette) string {
 	switch {
 	case isDraft:
-		return styleYellow.Render("◐")
+		return lipgloss.NewStyle().Foreground(pal.StatusDraft).Render("◐")
 	case strings.EqualFold(state, "merged"):
-		return stylePurple.Render("✓")
+		return lipgloss.NewStyle().Foreground(pal.StatusMerged).Render("✓")
 	case strings.EqualFold(state, "closed"):
-		return styleRed.Render("✗")
+		return lipgloss.NewStyle().Foreground(pal.StatusClosed).Render("✗")
 	case strings.EqualFold(state, "open"):
-		return styleGreen.Render("●")
+		return lipgloss.NewStyle().Foreground(pal.StatusOpen).Render("●")
 	default:
-		return styleGray.Render("○")
+		return lipgloss.NewStyle().Foreground(pal.TextMuted).Render("○")
 	}
 }
 
-func summarizeChecks(checks []github.CheckRun) string {
+func summarizeChecks(checks []github.CheckRun, pal Palette) string {
 	if len(checks) == 0 {
 		return "—"
 	}
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return styleRed.Render("✗")
+			return lipgloss.NewStyle().Foreground(pal.CheckFail).Render("✗")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return styleYellow.Render("…")
+		return lipgloss.NewStyle().Foreground(pal.CheckPending).Render("…")
 	}
-	return styleGreen.Render("✓")
+	return lipgloss.NewStyle().Foreground(pal.CheckPass).Render("✓")
 }
 
 
 // labelPillColors returns background and foreground terminal colors for a
 // label pill based on its name category.
-func labelPillColors(name string) (bg, fg lipgloss.Color) {
+func labelPillColors(name string, pal Palette) (bg, fg lipgloss.Color) {
 	low := strings.ToLower(name)
 	switch {
 	case strings.Contains(low, "priority:high"),
 		strings.Contains(low, "priority:critical"),
 		strings.Contains(low, "type:bug"),
 		low == "bug", low == "critical", low == "blocker":
-		return "1", "15" // red bg, white text
+		return pal.LabelDanger, pal.LabelDangerFg
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return "3", "0" // yellow bg, black text
+		return pal.LabelWarn, pal.LabelWarnFg
 	case strings.Contains(low, "priority:low"):
-		return "2", "0" // green bg, black text
+		return pal.LabelSuccess, pal.LabelSuccessFg
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
 		low == "enhancement", low == "feature":
-		return "6", "0" // cyan bg, black text
+		return pal.LabelFeature, pal.LabelFeatureFg
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return "5", "15" // purple bg, white text
+		return pal.LabelDocs, pal.LabelDocsFg
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return "8", "15" // dark gray bg, white text
+		return pal.LabelSubtle, pal.LabelSubtleFg
 	default:
-		return "208", "0" // orange bg, black text
+		return pal.LabelDefault, pal.LabelDefaultFg
 	}
 }
 
 // labelPill renders a label as a colored background chip.
 // stripBg is the background color of the containing row, used to color the
 // gap between pills so the strip stays uniformly dark.
-func labelPill(stripBg lipgloss.Color, name string) string {
-	bg, fg := labelPillColors(name)
-	chip := lipgloss.NewStyle().
-		Background(bg).
-		Foreground(fg).
-		Padding(0, 1).
-		Render(name)
-	// Wrap with a single-space gutter in strip color on each side.
+func labelPill(stripBg lipgloss.Color, name string, pal Palette) string {
+	bg, fg := labelPillColors(name, pal)
+	chip := lipgloss.NewStyle().Background(bg).Foreground(fg).Padding(0, 1).Render(name)
 	gutter := lipgloss.NewStyle().Background(stripBg).Render(" ")
 	return gutter + chip + gutter
 }
@@ -676,36 +671,34 @@ func labelPill(stripBg lipgloss.Color, name string) string {
 // labelStyle returns a lipgloss style for a label based on its name.
 // Labels are categorized by common prefixes (priority:, type:, effort:) or
 // well-known keywords like "bug", "enhancement", "feature".
-func labelStyle(name string) lipgloss.Style {
+func labelStyle(name string, pal Palette) lipgloss.Style {
 	low := strings.ToLower(name)
+	s := lipgloss.NewStyle()
 	switch {
 	case strings.Contains(low, "priority:high"),
 		strings.Contains(low, "priority:critical"),
 		strings.Contains(low, "type:bug"),
-		low == "bug",
-		low == "critical",
-		low == "blocker":
-		return styleRed
+		low == "bug", low == "critical", low == "blocker":
+		return s.Foreground(pal.LabelDanger)
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return styleYellow
+		return s.Foreground(pal.LabelWarn)
 	case strings.Contains(low, "priority:low"):
-		return styleGreen
+		return s.Foreground(pal.LabelSuccess)
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
-		low == "enhancement",
-		low == "feature":
-		return styleCyan
+		low == "enhancement", low == "feature":
+		return s.Foreground(pal.LabelFeature)
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return stylePurple
+		return s.Foreground(pal.LabelDocs)
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return styleGray
+		return s.Foreground(pal.LabelSubtle)
 	default:
-		return styleOrange
+		return s.Foreground(pal.LabelDefault)
 	}
 }
 
@@ -731,8 +724,13 @@ func labelPriority(name string) int {
 
 
 // errorBox wraps a message in a red bordered box with an error icon.
-func errorBox(msg string) string {
-	return errorBoxStyle.Render("✗ " + msg)
+func errorBox(msg string, pal Palette) string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(pal.Danger).
+		Padding(0, 1).
+		Foreground(pal.Danger).
+		Render("✗ " + msg)
 }
 
 func joinUsers(users []github.User) string {
