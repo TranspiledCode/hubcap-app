@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
+	glamourstyles "github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -844,33 +845,38 @@ func timeAgo(ts string) string {
 	}
 }
 
-// rendererCache caches glamour TermRenderers keyed by (width, glamourStyle).
+// rendererCache caches glamour TermRenderers keyed by (width, docBg).
 var rendererCache sync.Map // map[rendererKey]*glamour.TermRenderer
 
 type rendererKey struct {
 	width int
-	style string
+	bg    string
 }
 
 // renderMarkdown renders a Markdown string to ANSI-styled terminal output.
-// glamourStyle is "light", "dark", or "auto" (auto-detects from terminal).
+// docBg is the hex background color of the containing area (e.g. "#F2ECD8" for
+// parchment). When non-empty, glamour is configured with a matching document
+// background so that ANSI reset codes emitted inside the rendered content reset
+// to docBg instead of the terminal default. Pass "" for dark/auto-detected themes.
 // Falls back to the raw string if glamour fails so the body is never blank.
-func renderMarkdown(body string, width int, glamourStyle string) string {
+func renderMarkdown(body string, width int, docBg string) string {
 	if body == "" {
 		return ""
 	}
-	key := rendererKey{width, glamourStyle}
+	key := rendererKey{width, docBg}
 	var r *glamour.TermRenderer
 	if cached, ok := rendererCache.Load(key); ok {
 		r = cached.(*glamour.TermRenderer)
 	} else {
 		var opt glamour.TermRendererOption
-		switch glamourStyle {
-		case "light":
-			opt = glamour.WithStandardStyle("light")
-		case "dark":
-			opt = glamour.WithStandardStyle("dark")
-		default:
+		if docBg != "" {
+			// Light theme: copy the light style and set the document background
+			// to match the surrounding area. Glamour then emits explicit bg codes
+			// throughout, so inline resets don't bleed the terminal default through.
+			cfg := glamourstyles.LightStyleConfig
+			cfg.Document.StylePrimitive.BackgroundColor = strPtr(docBg)
+			opt = glamour.WithStyles(cfg)
+		} else {
 			opt = glamour.WithAutoStyle()
 		}
 		var err error
@@ -886,6 +892,8 @@ func renderMarkdown(body string, width int, glamourStyle string) string {
 	}
 	return out
 }
+
+func strPtr(s string) *string { return &s }
 
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)

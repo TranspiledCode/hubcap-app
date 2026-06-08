@@ -63,8 +63,8 @@ func TestRenderPRContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 
 func TestRenderMarkdown_RepeatedCallsSameWidth_Consistent(t *testing.T) {
 	body := "# Title\n\nParagraph with `code`."
-	first := renderMarkdown(body, 80, "auto")
-	second := renderMarkdown(body, 80, "auto")
+	first := renderMarkdown(body, 80, "")
+	second := renderMarkdown(body, 80, "")
 	if first != second {
 		t.Error("repeated renderMarkdown calls with same input should return identical output")
 	}
@@ -75,7 +75,7 @@ func TestRenderMarkdown_RepeatedCallsSameWidth_Consistent(t *testing.T) {
 
 func TestRenderMarkdown_BodyAppearsInOutput(t *testing.T) {
 	body := "Hello unique-string-xyz"
-	out := renderMarkdown(body, 80, "auto")
+	out := renderMarkdown(body, 80, "")
 	if !strings.Contains(out, "unique-string-xyz") {
 		t.Errorf("expected output to contain input text, got: %q", out)
 	}
