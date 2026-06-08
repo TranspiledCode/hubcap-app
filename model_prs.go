@@ -588,7 +588,8 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		}
 		m.detailPR = msg.pr
 		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
+		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
 		return m, renderPRContentCmd(msg.pr, m.width, m.palette)
 
@@ -912,7 +913,8 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
 					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Render("Rendering…") + "\n")
+					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.pr.Number)
 					cmds = append(cmds, renderPRContentCmd(prefetched, m.width, m.palette))
