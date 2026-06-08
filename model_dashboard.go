@@ -49,17 +49,21 @@ type DashboardModel struct {
 	rows    []dashRow
 	width   int
 	height  int
+
+	// palette mirrors Config.ColorTheme for dashboard item colours.
+	palette Palette
 }
 
-func newDashboardModel(cfg Config) DashboardModel {
+func newDashboardModel(cfg Config, pal Palette) DashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
 	return DashboardModel{
 		spinner: s,
 		loading: true,
 		cfg:     cfg,
+		palette: pal,
 	}
 }
 
@@ -266,11 +270,12 @@ func (m DashboardModel) View() string {
 	var b strings.Builder
 
 	// ── Styles ────────────────────────────────────────────────────────────────
-	selectedBg := lipgloss.Color("235")
+	pal := m.palette
+	selectedBg := pal.BgSelected
 
-	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
-	countStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true)
-	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(pal.Meta)
+	countStyle := lipgloss.NewStyle().Foreground(pal.StatusMerged).Bold(true)
+	ruleStyle := lipgloss.NewStyle().Foreground(pal.TextFaint)
 	// stateIcon returns the type icon colored by state.
 	// ⚑ = issue (flag), ⤴ = PR (upward arrow). Color = state.
 	// These are kept as named color lookups; actual rendering now happens
@@ -278,13 +283,13 @@ func (m DashboardModel) View() string {
 	prIconColor := func(state string, isDraft bool) lipgloss.Color {
 		switch {
 		case isDraft:
-			return lipgloss.Color("214") // amber = draft
+			return pal.StatusDraft
 		case strings.EqualFold(state, "merged"):
-			return lipgloss.Color("141") // purple = merged
+			return pal.StatusMerged
 		case strings.EqualFold(state, "closed"):
-			return lipgloss.Color("196") // red = closed
+			return pal.StatusClosed
 		default:
-			return lipgloss.Color("83") // green = open
+			return pal.StatusOpen
 		}
 	}
 
@@ -320,13 +325,13 @@ func (m DashboardModel) View() string {
 		// Accent bar — reused on both rows so it spans the full item height.
 		var accent string
 		if selected {
-			accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+			accent = lipgloss.NewStyle().Foreground(pal.Accent).Background(selectedBg).Render("▌") +
 				base.Render(" ")
 		} else {
 			accent = "  "
 		}
 
-		numStyle := base.Foreground(lipgloss.Color("69"))
+		numStyle := base.Foreground(pal.Number)
 		if selected {
 			numStyle = numStyle.Bold(true)
 		}
@@ -341,9 +346,9 @@ func (m DashboardModel) View() string {
 			titleMaxW = 10
 		}
 
-		titleStyle := base.Foreground(lipgloss.Color("252"))
+		titleStyle := base.Foreground(pal.Text)
 		if selected {
-			titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+			titleStyle = base.Foreground(pal.TextBold).Bold(true)
 		}
 		titleStr := titleStyle.Render(truncate(cleanLine(title), titleMaxW))
 		titleActualW := lipgloss.Width(titleStr)
@@ -407,28 +412,28 @@ func (m DashboardModel) View() string {
 		} else {
 			base = lipgloss.NewStyle()
 		}
-		dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+		dimSep := base.Foreground(pal.TextFaint).Render("  ·  ")
 
 		switch row.sectionID {
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
 			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
-			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(p.CreatedAt))
-			line2Left := base.Foreground(lipgloss.Color("244")).Render("@"+truncate(p.Author.Login, 14)) +
+			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
+			line2Left := base.Foreground(pal.TextMuted).Render("@"+truncate(p.Author.Login, 14)) +
 				dimSep + summarizeChecks(p.StatusRollup)
 			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 
 		case secMyPRs:
 			p := m.data.myPRs[row.itemIdx]
 			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
-			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(p.CreatedAt))
+			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
 			var line2Left string
 			if p.HeadRefName != "" && p.BaseRefName != "" {
-				line2Left = base.Foreground(lipgloss.Color("244")).Render(truncate(p.HeadRefName, 18)) +
-					base.Foreground(lipgloss.Color("252")).Render(" → ") +
-					base.Foreground(lipgloss.Color("244")).Render(truncate(p.BaseRefName, 12))
+				line2Left = base.Foreground(pal.TextMuted).Render(truncate(p.HeadRefName, 18)) +
+					base.Foreground(pal.Text).Render(" → ") +
+					base.Foreground(pal.TextMuted).Render(truncate(p.BaseRefName, 12))
 			} else if p.IsDraft {
-				line2Left = base.Foreground(lipgloss.Color("244")).Render("draft")
+				line2Left = base.Foreground(pal.TextMuted).Render("draft")
 			}
 			if checks := summarizeChecks(p.StatusRollup); checks != "" {
 				if line2Left != "" {
@@ -441,12 +446,12 @@ func (m DashboardModel) View() string {
 
 		case secAssigned:
 			iss := m.data.assignedIssues[row.itemIdx]
-			issIconColor := lipgloss.Color("83")
+			issIconColor := pal.StatusOpen
 			if strings.EqualFold(iss.State, "closed") {
-				issIconColor = lipgloss.Color("196")
+				issIconColor = pal.StatusClosed
 			}
 			icon := base.Foreground(issIconColor).Bold(true).Render("⚑")
-			ts := base.Foreground(lipgloss.Color("240")).Render(timeAgo(iss.CreatedAt))
+			ts := base.Foreground(pal.TextDim).Render(timeAgo(iss.CreatedAt))
 			labelMax := width * 40 / 100
 			if labelMax < 15 {
 				labelMax = 15
@@ -457,7 +462,7 @@ func (m DashboardModel) View() string {
 			} else {
 				assigneeText = "unassigned"
 			}
-			line2Left := base.Foreground(lipgloss.Color("244")).Render(truncate(assigneeText, 20))
+			line2Left := base.Foreground(pal.TextMuted).Render(truncate(assigneeText, 20))
 			const dashMaxLabels = 3
 			shownLabels := iss.Labels
 			labelOverflow := 0
@@ -467,20 +472,20 @@ func (m DashboardModel) View() string {
 			}
 			var bgKey string
 			if selected {
-				bgKey = "235"
+				bgKey = string(pal.BgSelected)
 			}
 			if labels := issueRowLabels(shownLabels, bgKey, labelMax); labels != "" {
 				line2Left += dimSep + labels
 				if labelOverflow > 0 {
-					line2Left += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", labelOverflow))
+					line2Left += base.Foreground(pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
 				}
 			}
 			// Type badge — always rendered (dim "—" when no type), matching Issues list.
 			var line2Right string
 			if iss.IssueType != "" {
-				line2Right = base.Foreground(lipgloss.Color("111")).Render(iss.IssueType)
+				line2Right = base.Foreground(pal.Number).Render(iss.IssueType)
 			} else {
-				line2Right = base.Foreground(lipgloss.Color("238")).Render("—")
+				line2Right = base.Foreground(pal.TextFaint).Render("—")
 			}
 			b.WriteString(renderRow(base, selected, icon, iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
 		}

@@ -10,10 +10,10 @@
 //
 // Usage:
 //
-//	btn := NewKeyButton("enter", "open", ColorAction)
-//	row := btn.Render(theme)
+//	btn := NewKeyButton("enter", "open", pal.Action)
+//	row := btn.Render(theme, pal)
 //
-//	bar := RenderFooterBar(width, theme, btn1, btn2, btn3)
+//	bar := RenderFooterBar(width, theme, pal, btn1, btn2, btn3)
 package main
 
 import (
@@ -55,28 +55,14 @@ func formWidth(modelWidth int, theme UITheme) int {
 	}
 }
 
-// footerBg is the background colour for minimal/default themes.
-// comfortableBg is a slightly darker gray for the comfortable 3-row footer strip,
-// providing a subtle visual separation from the content area without stark contrast.
-const (
-	footerBg      = lipgloss.Color("235")
-	comfortableBg = lipgloss.Color("234")
-)
-
-// themeBg returns the correct footer background for the given theme.
-func themeBg(theme UITheme) lipgloss.Color {
+// themeBg returns the correct footer background colour for the given theme
+// and palette.
+func themeBg(theme UITheme, pal Palette) lipgloss.Color {
 	if theme == ThemeComfortable {
-		return comfortableBg
+		return pal.BgComfy
 	}
-	return footerBg
+	return pal.BgFooter
 }
-
-// Semantic colours used throughout the footer.
-var (
-	ColorAction = lipgloss.Color("83")  // green — primary action keys
-	ColorMeta   = lipgloss.Color("208") // amber — structural / meta keys
-	ColorDanger = lipgloss.Color("196") // red   — destructive keys
-)
 
 // KeyButton is a key label paired with a short description.
 type KeyButton struct {
@@ -97,10 +83,10 @@ func NewKeyButton(key, desc string, color lipgloss.Color) KeyButton {
 //	comfortable → 3-row box:      ╭───╮
 //	                              │ a │  assign
 //	                              ╰───╯
-func (b KeyButton) Render(theme UITheme) string {
-	bg := themeBg(theme)
+func (b KeyButton) Render(theme UITheme, pal Palette) string {
+	bg := themeBg(theme, pal)
 	keySt := lipgloss.NewStyle().Foreground(b.Color).Background(bg).Bold(true)
-	descSt := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Background(bg)
+	descSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(bg)
 
 	switch theme {
 
@@ -133,7 +119,7 @@ func (b KeyButton) Render(theme UITheme) string {
 		// without this the 1-row description text leaves transparent rows
 		// above and below it when joined alongside the taller button.
 		label := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
+			Foreground(pal.TextMuted).
 			Background(bg).
 			Height(3).
 			AlignVertical(lipgloss.Center).
@@ -145,8 +131,8 @@ func (b KeyButton) Render(theme UITheme) string {
 
 // singleRowBar builds a single-row padded footer string from already-rendered
 // button strings. Used by minimal and default themes.
-func singleRowBar(width int, theme UITheme, buttons ...KeyButton) string {
-	bgSt := lipgloss.NewStyle().Background(themeBg(theme))
+func singleRowBar(width int, theme UITheme, pal Palette, buttons ...KeyButton) string {
+	bgSt := lipgloss.NewStyle().Background(themeBg(theme, pal))
 	edge := bgSt.Render("  ")
 	gap := bgSt.Render("   ")
 
@@ -156,7 +142,7 @@ func singleRowBar(width int, theme UITheme, buttons ...KeyButton) string {
 		if i > 0 {
 			sb.WriteString(gap)
 		}
-		sb.WriteString(btn.Render(theme))
+		sb.WriteString(btn.Render(theme, pal))
 	}
 	sb.WriteString(edge)
 	line := sb.String()
@@ -172,8 +158,8 @@ func singleRowBar(width int, theme UITheme, buttons ...KeyButton) string {
 
 // RenderFooterBar lays out buttons separated by gaps and pads to width.
 // Minimal and Default produce a 1-row result; Comfortable produces 3 rows.
-func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
-	bgSt := lipgloss.NewStyle().Background(themeBg(theme))
+func RenderFooterBar(width int, theme UITheme, pal Palette, buttons ...KeyButton) string {
+	bgSt := lipgloss.NewStyle().Background(themeBg(theme, pal))
 
 	// ── Comfortable: 3-row JoinHorizontal layout ──────────────────────────────
 	if theme == ThemeComfortable {
@@ -188,7 +174,7 @@ func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
 			if i > 0 {
 				parts = append(parts, gap)
 			}
-			parts = append(parts, btn.Render(theme))
+			parts = append(parts, btn.Render(theme, pal))
 		}
 		parts = append(parts, edge)
 		joined := lipgloss.JoinHorizontal(lipgloss.Center, parts...)
@@ -204,22 +190,22 @@ func RenderFooterBar(width int, theme UITheme, buttons ...KeyButton) string {
 		}
 		// Separator line above the button strip.
 		sep := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
-			Background(themeBg(theme)).
+			Foreground(pal.TextFaint).
+			Background(themeBg(theme, pal)).
 			Render(strings.Repeat("─", width))
 
 		return sep + "\n" + strings.Join(rows, "\n")
 	}
 
 	// ── Minimal / Default: single row ─────────────────────────────────────────
-	return singleRowBar(width, theme, buttons...)
+	return singleRowBar(width, theme, pal, buttons...)
 }
 
 // CenterInFooterBar wraps a single-line string (toast, spinner) to match the
 // height of RenderFooterBar for the same theme (1 row for minimal/default,
 // 3 rows for comfortable).
-func CenterInFooterBar(content string, width int, theme UITheme) string {
-	bgSt := lipgloss.NewStyle().Background(themeBg(theme))
+func CenterInFooterBar(content string, width int, theme UITheme, pal Palette) string {
+	bgSt := lipgloss.NewStyle().Background(themeBg(theme, pal))
 	w := lipgloss.Width(content)
 	switch {
 	case w < width:
@@ -231,7 +217,7 @@ func CenterInFooterBar(content string, width int, theme UITheme) string {
 		return content
 	}
 	// Comfortable: separator + 3-row block to match RenderFooterBar height.
-	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Background(themeBg(theme)).Render(strings.Repeat("─", width))
+	sep := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(themeBg(theme, pal)).Render(strings.Repeat("─", width))
 	blank := bgSt.Width(width).Render("")
 	return sep + "\n" + blank + "\n" + content + "\n" + blank
 }

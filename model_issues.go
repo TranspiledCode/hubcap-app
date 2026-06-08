@@ -145,7 +145,7 @@ func (i issueListItem) FilterValue() string {
 //	Line 1: [accent] ● #N   Title…(fill)
 //	Line 2:         Assignee  Labels…
 
-type issueDelegate struct{}
+type issueDelegate struct{ pal Palette }
 
 func (d issueDelegate) Height() int                             { return 2 }
 func (d issueDelegate) Spacing() int                            { return 1 }
@@ -162,7 +162,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 
 	// Base style — slightly lighter bg on the selected row.
 	var base lipgloss.Style
-	selectedBg := lipgloss.Color("235")
+	selectedBg := d.pal.BgSelected
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
 	} else {
@@ -172,22 +172,22 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Left accent bar (2 chars wide either way so layout stays stable).
 	var accent string
 	if selected {
-		accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
 		accent = "  "
 	}
 
 	// ⚑ colored by state: green = open, red = closed.
-	dotColor := lipgloss.Color("83")
+	dotColor := d.pal.StatusOpen
 	if !strings.EqualFold(issue.State, "open") {
-		dotColor = lipgloss.Color("196")
+		dotColor = d.pal.StatusClosed
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⚑")
 
 	// Issue number — left-aligned in a 4-digit-wide field so columns stay
 	// stable as numbers grow: " #20  " → " #200 " → " #2000".
-	numStyle := base.Foreground(lipgloss.Color("69"))
+	numStyle := base.Foreground(d.pal.Number)
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
@@ -196,16 +196,16 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Timestamp — rendered first so we know the width before sizing the title.
 	var tsStr string
 	if age := timeAgo(issue.CreatedAt); age != "" {
-		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
+		tsStr = base.Foreground(d.pal.TextDim).Render(age)
 	}
 	tsW := lipgloss.Width(tsStr)
 
 	// Title fills the space between the left prefix and the timestamp.
 	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	// right suffix = gap(2) + tsW + trailing(1)
-	titleStyle := base.Foreground(lipgloss.Color("252"))
+	titleStyle := base.Foreground(d.pal.Text)
 	if selected {
-		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+		titleStyle = base.Foreground(d.pal.TextBold).Bold(true)
 	}
 	titleMaxW := width - 10 - 2 - tsW - 1
 	if titleMaxW < 20 {
@@ -230,9 +230,9 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Build the type badge first so we know its width before sizing labels.
 	var typeStr string
 	if issue.IssueType != "" {
-		typeStr = base.Foreground(lipgloss.Color("111")).Render(issue.IssueType)
+		typeStr = base.Foreground(d.pal.Number).Render(issue.IssueType)
 	} else {
-		typeStr = base.Foreground(lipgloss.Color("238")).Render("—")
+		typeStr = base.Foreground(d.pal.TextFaint).Render("—")
 	}
 	typeW := lipgloss.Width(typeStr)
 
@@ -254,7 +254,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Reuse accent on line 2 so the bar spans both rows; fill the rest of the indent.
 	indent := accent + base.Render(strings.Repeat(" ", lineIndent-2))
 
-	assigneeStyle := base.Foreground(lipgloss.Color("244"))
+	assigneeStyle := base.Foreground(d.pal.TextMuted)
 	var assigneeText string
 	if len(issue.Assignees) > 0 {
 		assigneeText = "@" + joinUsers(issue.Assignees)
@@ -275,11 +275,11 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		}
 		var bgKey string
 		if selected {
-			bgKey = "235"
+			bgKey = string(d.pal.BgSelected)
 		}
 		labelPart = issueRowLabels(shown, bgKey, labelMax)
 		if overflow > 0 {
-			labelPart += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+			labelPart += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", overflow))
 		}
 	}
 
@@ -294,7 +294,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	line2Fill := base.Render(strings.Repeat(" ", line2FillW))
 
-	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	dimSep := base.Foreground(d.pal.TextFaint).Render("  ·  ")
 	line2 := indent + assigneeStr
 	if labelPart != "" {
 		line2 += dimSep + labelPart
@@ -380,6 +380,9 @@ type IssuesModel struct {
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
 
+	// palette mirrors Config.ColorTheme for list item and detail colours.
+	palette Palette
+
 	// currentUser is the authenticated GitHub login, used to distinguish
 	// Grab / Take / Drop when the user presses 'a' on the issue list.
 	currentUser string
@@ -393,12 +396,12 @@ type IssuesModel struct {
 	prefetchedDetails map[int]github.Issue
 }
 
-func newIssuesModel(filters github.Filters) IssuesModel {
+func newIssuesModel(filters github.Filters, pal Palette) IssuesModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
-	l := list.New([]list.Item{}, issueDelegate{}, 0, 0)
+	l := list.New([]list.Item{}, issueDelegate{pal: pal}, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
@@ -422,6 +425,7 @@ func newIssuesModel(filters github.Filters) IssuesModel {
 		spinner:  s,
 		loading:  true,
 		filters:  filters,
+		palette:  pal,
 		formVals: &issueFormVals{},
 	}
 }
@@ -928,8 +932,8 @@ func (m IssuesModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded))
-		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded, m.palette))
+		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr, m.palette))
 		return b.String()
 	}
 
@@ -959,6 +963,6 @@ func renderIssueDetailContent(issue github.Issue, width int) string {
 // renderIssueDetailView renders the scrollable viewport only.
 // Action feedback (toast) is shown in the footer bar by AppModel so it never
 // changes the body height.
-func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
+func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error, pal Palette) string {
+	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp, pal)) + "\n"
 }

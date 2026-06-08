@@ -15,6 +15,7 @@ type ConfigVals struct {
 	AutoRefreshEnabled  bool
 	AutoRefreshInterval string
 	UITheme             string
+	ColorTheme          string
 	ActionChoice        string
 }
 
@@ -25,6 +26,10 @@ func InitConfigVals(vals *ConfigVals, cfg Config) {
 	vals.UITheme = cfg.UITheme
 	if vals.UITheme == "" {
 		vals.UITheme = "default"
+	}
+	vals.ColorTheme = cfg.ColorTheme
+	if vals.ColorTheme == "" {
+		vals.ColorTheme = "default"
 	}
 	vals.ActionChoice = "save"
 }
@@ -57,6 +62,16 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 			).
 			Value(&vals.UITheme),
 		huh.NewSelect[string]().
+			Title("Colour theme").
+			Description("Accent and status colours. Press t anywhere to cycle.").
+			Options(
+				huh.NewOption("Default  — amber & green", "default"),
+				huh.NewOption("Dracula  — purple accent, vibrant", "dracula"),
+				huh.NewOption("Nord     — cool blue-grey tones", "nord"),
+				huh.NewOption("Catppuccin — warm dark pastels", "catppuccin"),
+			).
+			Value(&vals.ColorTheme),
+		huh.NewSelect[string]().
 			Title("Action").
 			Options(
 				huh.NewOption("Save settings", "save"),
@@ -79,5 +94,6 @@ func ResolveConfig(vals *ConfigVals, current Config) Config {
 		}
 	}
 	cfg.UITheme = vals.UITheme
+	cfg.ColorTheme = vals.ColorTheme
 	return cfg
 }

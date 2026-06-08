@@ -15,6 +15,7 @@ type Config struct {
 	AutoRefreshEnabled  bool             `json:"auto_refresh_enabled"`
 	AutoRefreshInterval int              `json:"auto_refresh_interval"` // in seconds
 	UITheme             string           `json:"ui_theme"`              // "minimal" | "default" | "comfortable"
+	ColorTheme          string           `json:"color_theme"`           // "default" | "dracula" | "nord" | "catppuccin"
 	IssueFilters        github.Filters   `json:"issue_filters"`
 	PRFilters           github.PRFilters `json:"pr_filters"`
 }
@@ -25,6 +26,7 @@ func defaultConfig() Config {
 		AutoRefreshEnabled:  false,
 		AutoRefreshInterval: 60,
 		UITheme:             "default",
+		ColorTheme:          "default",
 		IssueFilters:        github.Filters{State: "open", Limit: 50},
 		PRFilters:           github.PRFilters{State: "open", Limit: 50},
 	}

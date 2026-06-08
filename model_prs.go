@@ -164,7 +164,7 @@ func (p prListItem) FilterValue() string {
 // Line 1: [accent] ⤴ #N   Title…(fill)…  timestamp
 // Line 2: [accent]         @author  ·  checks  ·  labels  (fill)  head → base
 
-type prDelegate struct{}
+type prDelegate struct{ pal Palette }
 
 func (d prDelegate) Height() int                             { return 2 }
 func (d prDelegate) Spacing() int                            { return 1 }
@@ -179,7 +179,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	width := m.Width()
 	selected := index == m.Index()
 
-	selectedBg := lipgloss.Color("235")
+	selectedBg := d.pal.BgSelected
 	var base lipgloss.Style
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
@@ -190,7 +190,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	// Left accent bar — reused on both rows so the bar spans the full item height.
 	var accent string
 	if selected {
-		accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
 		accent = "  "
@@ -200,18 +200,18 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	var dotColor lipgloss.Color
 	switch {
 	case pr.IsDraft:
-		dotColor = lipgloss.Color("214")
+		dotColor = d.pal.StatusDraft
 	case strings.EqualFold(pr.State, "merged"):
-		dotColor = lipgloss.Color("141")
+		dotColor = d.pal.StatusMerged
 	case strings.EqualFold(pr.State, "closed"):
-		dotColor = lipgloss.Color("196")
+		dotColor = d.pal.StatusClosed
 	default:
-		dotColor = lipgloss.Color("83")
+		dotColor = d.pal.StatusOpen
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⤴")
 
 	// PR number — left-aligned in a 4-digit-wide field for stable columns.
-	numStyle := base.Foreground(lipgloss.Color("69"))
+	numStyle := base.Foreground(d.pal.Number)
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
@@ -220,15 +220,15 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	// Timestamp — rendered first so we know the width before sizing the title.
 	var tsStr string
 	if age := timeAgo(pr.CreatedAt); age != "" {
-		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
+		tsStr = base.Foreground(d.pal.TextDim).Render(age)
 	}
 	tsW := lipgloss.Width(tsStr)
 
 	// Title fills the space between the left prefix and the timestamp.
 	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
-	titleStyle := base.Foreground(lipgloss.Color("252"))
+	titleStyle := base.Foreground(d.pal.Text)
 	if selected {
-		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+		titleStyle = base.Foreground(d.pal.TextBold).Bold(true)
 	}
 	titleMaxW := width - 10 - 2 - tsW - 1
 	if titleMaxW < 20 {
@@ -250,11 +250,11 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	const lineIndent = 10
 	var bgKey string
 	if selected {
-		bgKey = "235"
+		bgKey = string(d.pal.BgSelected)
 	}
 
-	authorStyle := base.Foreground(lipgloss.Color("244"))
-	arrowStyle := base.Foreground(lipgloss.Color("252"))
+	authorStyle := base.Foreground(d.pal.TextMuted)
+	arrowStyle := base.Foreground(d.pal.Text)
 
 	// Branch direction acts as the right-side badge (like typeStr in issues).
 	var branchStr string
@@ -265,14 +265,14 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	branchW := lipgloss.Width(branchStr)
 
-	checksStr := prRowChecks(pr.StatusRollup, bgKey)
+	checksStr := prRowChecks(pr.StatusRollup, bgKey, d.pal)
 	checksW := lipgloss.Width(checksStr)
 
 	const (
 		sepW      = 5 // "  ·  "
 		branchGap = 2
 	)
-	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	dimSep := base.Foreground(d.pal.TextFaint).Render("  ·  ")
 
 	// Author takes ~30% of the content area; labels fill the rest.
 	contentW := width - lineIndent - branchGap - branchW - 1
@@ -302,7 +302,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget)
 	if labelOverflow > 0 {
-		labelStr += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", labelOverflow))
+		labelStr += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
 	}
 
 	// Reuse accent on line 2 so the bar spans both rows.
@@ -334,7 +334,7 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 }
 
 // prRowChecks returns a compact colored check-status symbol for a list row.
-func prRowChecks(checks []github.CheckRun, bgKey string) string {
+func prRowChecks(checks []github.CheckRun, bgKey string, pal Palette) string {
 	if len(checks) == 0 {
 		return ""
 	}
@@ -347,16 +347,16 @@ func prRowChecks(checks []github.CheckRun, bgKey string) string {
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return base.Foreground(lipgloss.Color("196")).Render("✗ failing")
+			return base.Foreground(pal.CheckFail).Render("✗ failing")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return base.Foreground(lipgloss.Color("214")).Render("… pending")
+		return base.Foreground(pal.CheckPending).Render("… pending")
 	}
-	return base.Foreground(lipgloss.Color("83")).Render("✓ passing")
+	return base.Foreground(pal.CheckPass).Render("✓ passing")
 }
 
 // ── PRsModel ──────────────────────────────────────────────────────────────────
@@ -392,6 +392,9 @@ type PRsModel struct {
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
 
+	// palette mirrors Config.ColorTheme for list item and detail colours.
+	palette Palette
+
 	// currentUser is the authenticated GitHub login, used to distinguish
 	// Grab / Take / Drop when the user presses 'a' on the PR list.
 	currentUser string
@@ -405,12 +408,12 @@ type PRsModel struct {
 	prefetchedDetails map[int]github.PullRequest
 }
 
-func newPRsModel(filters github.PRFilters) PRsModel {
+func newPRsModel(filters github.PRFilters, pal Palette) PRsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
-	l := list.New([]list.Item{}, prDelegate{}, 0, 0)
+	l := list.New([]list.Item{}, prDelegate{pal: pal}, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
@@ -430,6 +433,7 @@ func newPRsModel(filters github.PRFilters) PRsModel {
 		spinner:  s,
 		loading:  true,
 		filters:  filters,
+		palette:  pal,
 		formVals: &prFormVals{mergeType: "rebase", newBase: "main"},
 	}
 }
@@ -965,8 +969,8 @@ func (m PRsModel) View() string {
 	}
 
 	if m.showDetail {
-		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4))
-		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr))
+		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4, m.palette))
+		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr, m.palette))
 		return b.String()
 	}
 
@@ -984,6 +988,6 @@ func renderPRDetailContent(pr github.PullRequest, width int) string {
 
 // renderPRDetailView renders the scrollable viewport only.
 // Action feedback (toast) is shown in the footer bar by AppModel.
-func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
+func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error, pal Palette) string {
+	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp, pal)) + "\n"
 }
