@@ -1,14 +1,15 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Six named
+// A Palette holds every semantic colour role used across the UI. Seven named
 // palettes are provided:
 //
-//	"default"    — the original dark terminal look (amber + green)
-//	"dracula"    — Dracula colour scheme (purple accent, vibrant)
-//	"nord"       — Nord colour scheme (cool blue-grey tones)
-//	"catppuccin" — Catppuccin Mocha (warm dark pastels)
-//	"transpiled" — Transpiled brand colours (electric blue + violet + neon green)
-//	"cobalt2"    — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
+//	"default"     — the original dark terminal look (amber + green)
+//	"dracula"     — Dracula colour scheme (purple accent, vibrant)
+//	"nord"        — Nord colour scheme (cool blue-grey tones)
+//	"catppuccin"  — Catppuccin Mocha (warm dark pastels)
+//	"transpiled"  — Transpiled brand colours (electric blue + violet + neon green)
+//	"cobalt2"     — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
+//	"imagescoop"  — ImageScoop brand (periwinkle + purple + lime + hot pink)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
@@ -66,6 +67,7 @@ const (
 	ColorThemeCatppuccin = "catppuccin"
 	ColorThemeTranspiled = "transpiled"
 	ColorThemeCobalt2    = "cobalt2"
+	ColorThemeImageScoop = "imagescoop"
 )
 
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
@@ -76,6 +78,7 @@ var colorThemeOrder = []string{
 	ColorThemeCatppuccin,
 	ColorThemeTranspiled,
 	ColorThemeCobalt2,
+	ColorThemeImageScoop,
 }
 
 // ── Palette definitions ───────────────────────────────────────────────────────
@@ -269,6 +272,41 @@ var paletteTranspiled = Palette{
 	CheckPending: lipgloss.Color("#E7C61E"), // yellow — pending
 }
 
+// paletteImageScoop is based on colours extracted from imagescoop.app.
+// The brand signature is a periwinkle→purple gradient (#667eea / #764ba2)
+// with lime green (#a3e635), hot pink (#ec4899), and orange (#f97316)
+// as accent colours, on Tailwind slate dark backgrounds.
+var paletteImageScoop = Palette{
+	Action: lipgloss.Color("#a3e635"), // lime green — "do it" actions
+	Meta:   lipgloss.Color("#667eea"), // periwinkle — structural / nav
+	Danger: lipgloss.Color("#ec4899"), // hot pink — destructive
+
+	Accent: lipgloss.Color("#667eea"), // periwinkle — cursor bar, spinner
+	Title:  lipgloss.Color("#764ba2"), // purple — titles, app border
+	Number: lipgloss.Color("#7BC4D4"), // light teal — issue/PR numbers
+
+	Text:      lipgloss.Color("#E5E7EB"), // gray-200 — body text
+	TextBold:  lipgloss.Color("#FAFAFA"), // near-white — selected / highlighted
+	TextMuted: lipgloss.Color("#9CA3AF"), // gray-400 — authors, secondary
+	TextDim:   lipgloss.Color("#6B7280"), // gray-500 — timestamps
+	TextFaint: lipgloss.Color("#4B5563"), // gray-600 — separators
+
+	BgHeader:   lipgloss.Color("#0F172A"), // slate-900 — deepest
+	BgTabs:     lipgloss.Color("#1F2937"), // gray-800
+	BgSelected: lipgloss.Color("#283040"), // dark blue-grey selection
+	BgFooter:   lipgloss.Color("#0F172A"),
+	BgComfy:    lipgloss.Color("#111827"), // gray-900
+
+	StatusOpen:   lipgloss.Color("#a3e635"), // lime — open
+	StatusClosed: lipgloss.Color("#ec4899"), // hot pink — closed
+	StatusMerged: lipgloss.Color("#667eea"), // periwinkle — merged
+	StatusDraft:  lipgloss.Color("#f97316"), // orange — draft
+
+	CheckPass:    lipgloss.Color("#a3e635"),
+	CheckFail:    lipgloss.Color("#ec4899"),
+	CheckPending: lipgloss.Color("#f97316"), // orange — pending
+}
+
 // resolvePalette maps a colour-theme name to its Palette, falling back to
 // paletteDefault for unknown / empty values.
 func resolvePalette(s string) Palette {
@@ -283,6 +321,8 @@ func resolvePalette(s string) Palette {
 		return paletteTranspiled
 	case ColorThemeCobalt2:
 		return paletteCobalt2
+	case ColorThemeImageScoop:
+		return paletteImageScoop
 	default:
 		return paletteDefault
 	}
