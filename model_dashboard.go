@@ -28,12 +28,14 @@ const (
 	secReviewRequests = 0
 	secMyPRs          = 1
 	secAssigned       = 2
+	secAssignedPRs    = 3
 )
 
-var sectionNames = [3]string{
+var sectionNames = [4]string{
 	"REVIEW REQUESTS",
 	"MY OPEN PRs",
 	"ASSIGNED TO ME",
+	"ASSIGNED PRs",
 }
 
 // ── DashboardModel ────────────────────────────────────────────────────────────
@@ -72,7 +74,7 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 		var data dashboardData
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		var errs [3]error
+		var errs [4]error
 
 		fetch := func(i int, fn func() (interface{}, error)) {
 			defer wg.Done()
@@ -90,10 +92,12 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 				data.myPRs = result.([]github.PullRequest)
 			case 2:
 				data.assignedIssues = result.([]github.Issue)
+			case 3:
+				data.assignedPRs = result.([]github.PullRequest)
 			}
 		}
 
-		wg.Add(3)
+		wg.Add(4)
 		go fetch(0, func() (interface{}, error) {
 			return github.FetchPRs(github.PRFilters{Search: "review-requested:@me", State: "open", Limit: 20})
 		})
@@ -102,6 +106,9 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 		})
 		go fetch(2, func() (interface{}, error) {
 			return github.FetchIssues(github.Filters{Assignee: "@me", State: "open", Limit: 20})
+		})
+		go fetch(3, func() (interface{}, error) {
+			return github.FetchPRs(github.PRFilters{Assignee: "@me", State: "open", Limit: 20})
 		})
 		wg.Wait()
 
@@ -124,6 +131,7 @@ func buildDashRows(data dashboardData) []dashRow {
 		{secReviewRequests, len(data.reviewRequests), false},
 		{secMyPRs, len(data.myPRs), false},
 		{secAssigned, len(data.assignedIssues), true},
+		{secAssignedPRs, len(data.assignedPRs), false},
 	}
 	for _, sec := range sections {
 		if sec.count == 0 {
@@ -195,6 +203,8 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 				number = m.data.myPRs[row.itemIdx].Number
 			case secAssigned:
 				number = m.data.assignedIssues[row.itemIdx].Number
+			case secAssignedPRs:
+				number = m.data.assignedPRs[row.itemIdx].Number
 			}
 			return m, func() tea.Msg { return openItemMsg{isIssue: isIssue, number: number} }
 		}
@@ -241,6 +251,7 @@ type DashCounts struct {
 	ReviewRequests int
 	MyPRs          int
 	Assigned       int
+	AssignedPRs    int
 }
 
 func (m DashboardModel) Counts() DashCounts {
@@ -251,12 +262,17 @@ func (m DashboardModel) Counts() DashCounts {
 		ReviewRequests: len(m.data.reviewRequests),
 		MyPRs:          len(m.data.myPRs),
 		Assigned:       len(m.data.assignedIssues),
+		AssignedPRs:    len(m.data.assignedPRs),
 	}
 }
 
 func (m DashboardModel) View() string {
 	if m.loading {
-		return fmt.Sprintf("\n  %s Loading dashboard...\n", m.spinner.View())
+		line := fmt.Sprintf("\n  %s Loading dashboard...\n", m.spinner.View())
+		if bg := string(m.palette.BgBody); bg != "" {
+			line = injectDocBg(line, bg)
+		}
+		return line
 	}
 	if m.err != nil {
 		return errorBox(fmt.Sprintf("Dashboard error: %v\n\nPress r to retry.", m.err), m.palette)
@@ -294,11 +310,12 @@ func (m DashboardModel) View() string {
 		}
 	}
 
-	sectionIcons := [3]string{"⟳", "⎇", "●"}
-	sectionCounts := [3]int{
+	sectionIcons := [4]string{"⟳", "⎇", "●", "⤴"}
+	sectionCounts := [4]int{
 		len(m.data.reviewRequests),
 		len(m.data.myPRs),
 		len(m.data.assignedIssues),
+		len(m.data.assignedPRs),
 	}
 
 	// ── renderSectionHeader ───────────────────────────────────────────────────
@@ -492,8 +509,29 @@ func (m DashboardModel) View() string {
 				line2Right = base.Foreground(pal.TextFaint).Render("—")
 			}
 			b.WriteString(renderRow(base, selected, icon, iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
+
+		case secAssignedPRs:
+			p := m.data.assignedPRs[row.itemIdx]
+			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
+			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
+			var line2Left string
+			if p.HeadRefName != "" && p.BaseRefName != "" {
+				line2Left = base.Foreground(pal.TextMuted).Render(truncate(p.HeadRefName, 18)) +
+					base.Foreground(pal.Text).Render(" → ") +
+					base.Foreground(pal.TextMuted).Render(truncate(p.BaseRefName, 12))
+			} else if p.IsDraft {
+				line2Left = base.Foreground(pal.TextMuted).Render("draft")
+			}
+			if checks := summarizeChecks(p.StatusRollup, rowBg, pal); checks != "" {
+				if line2Left != "" {
+					line2Left += dimSep + checks
+				} else {
+					line2Left = checks
+				}
+			}
+			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 		}
 	}
 
-	return lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(b.String())
+	return lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(strings.TrimRight(b.String(), "\n"))
 }

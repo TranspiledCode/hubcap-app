@@ -535,6 +535,12 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	// ── Embedded form takes priority ──────────────────────────────────────────
 	if m.activeForm != nil {
+		// Esc / b / backspace cancels the form without submitting.
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.activeForm = nil
+			m.formVals.formType = prFormNone
+			return m, nil
+		}
 		form, cmd := m.activeForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.activeForm = f
@@ -587,7 +593,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailPR = msg.pr
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
 		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
@@ -653,7 +659,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					Title("Request reviewer").
 					Placeholder("GitHub username").
 					Value(&m.formVals.reviewerVal),
-			)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 			return m, m.activeForm.Init()
 		}
 		opts := make([]huh.Option[string], len(msg.reviewers))
@@ -667,7 +673,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				Title("Request reviewer").
 				Options(opts...).
 				Value(&m.formVals.reviewerVal),
-		)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
 	case tea.WindowSizeMsg:
@@ -676,7 +682,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = m.height - headerHeightDetail - metaStripHeight - 2
+			m.detail.Height = detailViewportHeight(m.height, metaStripHeight, m.uiTheme)
 		}
 
 	case spinner.TickMsg:
@@ -818,7 +824,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 							huh.NewOption("Merge commit", "merge"),
 						).
 						Value(&m.formVals.mergeType),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Top):
 				m.detail.GotoTop()
@@ -898,7 +904,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					huh.NewConfirm().
 						Title("Draft PR?").
 						Value(&m.formVals.newDraft),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
@@ -912,7 +918,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
-					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
 					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
@@ -950,7 +956,11 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 func (m PRsModel) View() string {
 	// When a form is active, render it — replacing list/detail content.
 	if m.activeForm != nil {
-		return m.activeForm.View()
+		body := m.activeForm.View()
+		if bg := string(m.palette.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+		return body
 	}
 
 	var b strings.Builder
@@ -965,8 +975,11 @@ func (m PRsModel) View() string {
 				return 0
 			}())
 		}
-		b.WriteString(fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg))
-		return b.String()
+		line := fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg)
+		if bg := string(m.palette.BgBody); bg != "" {
+			line = injectDocBg(line, bg)
+		}
+		return line
 	}
 
 	if m.err != nil {
@@ -997,5 +1010,5 @@ func renderPRDetailContent(pr github.PullRequest, width int, pal Palette) string
 func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error, pal Palette) string {
 	view := lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal))
 	spacer := lipgloss.NewStyle().Background(pal.BgBody).Width(vp.Width + 4).Render("")
-	return view + spacer + "\n"
+	return view + "\n" + spacer + "\n"
 }

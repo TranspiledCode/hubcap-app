@@ -43,7 +43,7 @@ func InitPRFilterVals(vals *PRFilterVals, filters github.PRFilters, assignees []
 
 // BuildPRFilterForm constructs a *huh.Form bound to vals. Call form.Init()
 // to start it; route messages through form.Update(msg) inside your model.
-func BuildPRFilterForm(vals *PRFilterVals, assignees []string, labels []string) *huh.Form {
+func BuildPRFilterForm(vals *PRFilterVals, assignees []string, labels []string, pal Palette) *huh.Form {
 	groupFields := []huh.Field{
 		huh.NewSelect[string]().
 			Title("State").
@@ -122,7 +122,7 @@ func BuildPRFilterForm(vals *PRFilterVals, assignees []string, labels []string) 
 			Value(&vals.ActionChoice),
 	)
 
-	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(buildHuhTheme(pal)).WithShowHelp(false)
 }
 
 // ResolvePRFilters reads the completed vals and returns an updated PRFilters.

@@ -531,6 +531,12 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 	// Route all messages to the active form exclusively so huh can manage its
 	// own keyboard navigation. Return early to block all app shortcuts.
 	if m.activeForm != nil {
+		// Esc / b / backspace cancels the form without submitting.
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.activeForm = nil
+			m.formVals.formType = issueFormNone
+			return m, nil
+		}
 		form, cmd := m.activeForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.activeForm = f
@@ -583,7 +589,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailIssue = msg.issue
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme))
 		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
@@ -649,7 +655,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
+			m.detail.Height = detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme)
 		}
 
 	case spinner.TickMsg:
@@ -675,7 +681,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				return m, nil
 			case key.Matches(msg, keys.IssueExpandMeta):
 				m.metaExpanded = !m.metaExpanded
-				m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
+				m.detail.Height = detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme)
 				return m, nil
 			case key.Matches(msg, keys.Refresh):
 				m.loadingDetail = true
@@ -758,7 +764,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Add label").
 						Placeholder("label name").
 						Value(&m.formVals.labelVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssueDevelop):
 				// Developing a branch is not allowed on a closed issue.
@@ -775,7 +781,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Branch name").
 						Description(fmt.Sprintf("Default: %s", defaultBranch)).
 						Value(&m.formVals.branchVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssuePR):
 				// Creating a PR is not allowed on a closed issue.
@@ -861,7 +867,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Placeholder("Describe the issue (optional)").
 						CharLimit(4000).
 						Value(&m.formVals.newBody),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
@@ -875,7 +881,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.issue.Number]; ok {
 					m.detailIssue = prefetched
-					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme))
 					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
@@ -913,7 +919,11 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 func (m IssuesModel) View() string {
 	// When a form is active, render it — replacing list/detail content.
 	if m.activeForm != nil {
-		return m.activeForm.View()
+		body := m.activeForm.View()
+		if bg := string(m.palette.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+		return body
 	}
 
 	var b strings.Builder
@@ -928,8 +938,11 @@ func (m IssuesModel) View() string {
 				return 0
 			}())
 		}
-		b.WriteString(fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg))
-		return b.String()
+		line := fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg)
+		if bg := string(m.palette.BgBody); bg != "" {
+			line = injectDocBg(line, bg)
+		}
+		return line
 	}
 
 	if m.err != nil {
@@ -975,5 +988,8 @@ func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error,
 	// explicitly parchment-coloured; a bare \n after a lipgloss reset would
 	// render on the terminal default (black) for light themes.
 	spacer := lipgloss.NewStyle().Background(pal.BgBody).Width(vp.Width + 4).Render("")
-	return view + spacer + "\n"
+	// view does not end with \n; adding \n here puts the spacer on its own
+	// line and prevents it from merging with the last viewport line (which
+	// would create a double-width line that causes terminal wrapping).
+	return view + "\n" + spacer + "\n"
 }

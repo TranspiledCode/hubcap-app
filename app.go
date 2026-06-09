@@ -82,14 +82,20 @@ func clearThemeToastCmd() tea.Cmd {
 // themeDisplayName returns a human-readable label for a colour theme key.
 func themeDisplayName(key string) string {
 	switch key {
+	case ColorThemeDefault:
+		return "Default"
 	case ColorThemeTranspiled:
 		return "Transpiled"
 	case ColorThemeCobalt2:
 		return "Cobalt 2"
 	case ColorThemeImageScoop:
 		return "ImageScoop"
+	case ColorThemeParchment:
+		return "Parchment"
+	case ColorThemeLatte:
+		return "Latte"
 	default:
-		return "Default"
+		return key
 	}
 }
 
@@ -114,6 +120,7 @@ type dashboardData struct {
 	reviewRequests []github.PullRequest
 	myPRs          []github.PullRequest
 	assignedIssues []github.Issue
+	assignedPRs    []github.PullRequest
 }
 
 // ── Root model ────────────────────────────────────────────────────────────────
@@ -407,7 +414,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Config form takes priority ────────────────────────────────────────────
 	// Route all messages to the active config form exclusively.
+	// Escape / b / backspace dismisses without saving.
 	if m.configForm != nil {
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.configForm = nil
+			return m, nil
+		}
 		form, cmd := m.configForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.configForm = f
@@ -453,7 +465,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Filter form takes priority ────────────────────────────────────────────
 	// Route all messages to the active filter form exclusively.
+	// Escape / b / backspace dismisses without saving.
 	if m.filterForm != nil {
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.filterForm = nil
+			return m, nil
+		}
 		form, cmd := m.filterForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.filterForm = f
@@ -503,11 +520,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fw := formWidth(m.width-2, theme)
 		if msg.forPRs {
 			InitPRFilterVals(m.prFilterVals, m.prs.filters, msg.assignees)
-			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels).
+			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels, m.palette).
 				WithWidth(fw)
 		} else {
 			InitIssueFilterVals(m.issueFilterVals, m.issues.filters, msg.assignees)
-			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels).
+			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels, m.palette).
 				WithWidth(fw)
 		}
 		return m, m.filterForm.Init()
@@ -576,6 +593,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showHelp {
 				m.helpVP.Width = m.width - 4
 				m.helpVP.Height = m.height - 5
+				m.helpVP.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 				m.helpVP.SetContent(buildHelpContent(m.width-4, m.palette))
 				m.helpVP.GotoTop()
 			}
@@ -594,7 +612,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Config) && !m.hasActiveForm():
 			// Open configuration form
 			InitConfigVals(m.configVals, m.cfg)
-			m.configForm = BuildConfigForm(m.configVals).WithWidth(formWidth(m.width-2, resolveTheme(m.cfg.UITheme)))
+			m.configForm = BuildConfigForm(m.configVals, m.palette).WithWidth(formWidth(m.width-2, resolveTheme(m.cfg.UITheme)))
 			return m, m.configForm.Init()
 		case key.Matches(msg, keys.ThemeCycle) && !m.hasActiveForm():
 			m.cfg.ColorTheme = nextColorTheme(m.cfg.ColorTheme)
@@ -984,6 +1002,14 @@ func footerView(m AppModel, width int, theme UITheme) string {
 			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	case TabIssues:
+		// When an inline form is open, show a minimal cancel footer.
+		if m.issues.activeForm != nil {
+			return RenderFooterBar(width, theme, pal,
+				NewKeyButton("tab", "next field", pal.Meta),
+				NewKeyButton("shift+tab", "prev field", pal.Meta),
+				NewKeyButton("esc", "cancel", pal.Danger),
+			)
+		}
 		// Grab / Take / Drop label depends on the selected issue's assignees.
 		assignLabel, assignColor := "grab", pal.Action
 		if item, ok := m.issues.list.SelectedItem().(issueListItem); ok {
@@ -1002,6 +1028,14 @@ func footerView(m AppModel, width int, theme UITheme) string {
 			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	case TabPRs:
+		// When an inline form is open, show a minimal cancel footer.
+		if m.prs.activeForm != nil {
+			return RenderFooterBar(width, theme, pal,
+				NewKeyButton("tab", "next field", pal.Meta),
+				NewKeyButton("shift+tab", "prev field", pal.Meta),
+				NewKeyButton("esc", "cancel", pal.Danger),
+			)
+		}
 		// Grab / Take / Drop label depends on the selected PR's assignees.
 		prAssignLabel, prAssignColor := "grab", pal.Action
 		if item, ok := m.prs.list.SelectedItem().(prListItem); ok {
@@ -1132,16 +1166,22 @@ func buildHelpContent(contentW int, pal Palette) string {
 // scrollable viewport. ↑/↓ scroll; any other key dismisses.
 func helpOverlayView(m AppModel, innerW int) string {
 	pal := m.palette
-	dimStyle := lipgloss.NewStyle().Foreground(pal.TextFaint)
+	dimStyle := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody)
 
 	hint := "  " + dimStyle.Render("↑ / ↓  scroll    ·    any other key to close")
+
+	inner := m.helpVP.View() + "\n" + hint
+	if bg := string(pal.BgBody); bg != "" {
+		inner = injectDocBg(inner, bg)
+	}
 
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(pal.Title).
+		Background(pal.BgBody).
 		Width(innerW).
 		Height(m.height - 2)
-	return appBorder.Render(m.helpVP.View() + "\n" + hint)
+	return appBorder.Render(inner)
 }
 
 func (m AppModel) View() string {
@@ -1163,10 +1203,14 @@ func (m AppModel) View() string {
 	// Show the configuration form when active.
 	if m.configForm != nil {
 		body := m.configForm.View()
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
 
 		appBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(pal.Title).
+			Background(pal.BgBody).
 			Width(innerW)
 		return appBorder.Render(body)
 	}
@@ -1181,10 +1225,14 @@ func (m AppModel) View() string {
 		} else {
 			body = m.filterForm.View()
 		}
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
 
 		appBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(pal.Title).
+			Background(pal.BgBody).
 			Width(innerW)
 		return appBorder.Render(body)
 	}
@@ -1216,6 +1264,15 @@ func (m AppModel) View() string {
 	headerLines := strings.Count(header, "\n")
 	bodyLines := strings.Count(body, "\n")
 	footerLines := strings.Count(footer, "\n") + 1
+
+	// Ensure body ends with \n so the first fill line isn't concatenated onto
+	// the last body line when building inner. Increment bodyLines so the fill
+	// calculation remains correct.
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		body += "\n"
+		bodyLines++
+	}
+
 	usedLines := headerLines + bodyLines + footerLines
 
 	remaining := innerH - usedLines

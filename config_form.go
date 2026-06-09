@@ -36,7 +36,7 @@ func InitConfigVals(vals *ConfigVals, cfg Config) {
 
 // BuildConfigForm constructs a *huh.Form bound to vals. Call form.Init()
 // to start it; route messages through form.Update(msg) inside your model.
-func BuildConfigForm(vals *ConfigVals) *huh.Form {
+func BuildConfigForm(vals *ConfigVals, pal Palette) *huh.Form {
 	return huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
 			Title("Enable auto-refresh").
@@ -69,6 +69,8 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 				huh.NewOption("Transpiled — electric blue & violet", "transpiled"),
 				huh.NewOption("Cobalt 2   — deep blue, mint & yellow", "cobalt2"),
 				huh.NewOption("ImageScoop — periwinkle, purple & lime", "imagescoop"),
+				huh.NewOption("Parchment  — warm paper, jewel-tone accents", "parchment"),
+				huh.NewOption("Latte      — Catppuccin light, mauve & blue", "latte"),
 			).
 			Value(&vals.ColorTheme),
 		huh.NewSelect[string]().
@@ -78,7 +80,7 @@ func BuildConfigForm(vals *ConfigVals) *huh.Form {
 				huh.NewOption("Reset to defaults", "reset"),
 			).
 			Value(&vals.ActionChoice),
-	)).WithTheme(huh.ThemeCatppuccin())
+	)).WithTheme(buildHuhTheme(pal)).WithShowHelp(false)
 }
 
 // ResolveConfig reads the completed vals and returns an updated Config.
