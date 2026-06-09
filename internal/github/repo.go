@@ -40,20 +40,21 @@ type Issue struct {
 }
 
 type PullRequest struct {
-	Number         int        `json:"number"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	State          string     `json:"state"`
-	IsDraft        bool       `json:"isDraft"`
-	Author         User       `json:"author"`
-	Assignees      []User     `json:"assignees"`
-	Labels         []Label    `json:"labels"`
-	HeadRefName    string     `json:"headRefName"`
-	BaseRefName    string     `json:"baseRefName"`
-	ReviewDecision string     `json:"reviewDecision"`
-	StatusRollup   []CheckRun `json:"statusCheckRollup"`
-	URL            string     `json:"url"`
-	CreatedAt      string     `json:"createdAt"`
+	Number             int        `json:"number"`
+	Title              string     `json:"title"`
+	Body               string     `json:"body"`
+	State              string     `json:"state"`
+	IsDraft            bool       `json:"isDraft"`
+	Author             User       `json:"author"`
+	Assignees          []User     `json:"assignees"`
+	Labels             []Label    `json:"labels"`
+	HeadRefName        string     `json:"headRefName"`
+	BaseRefName        string     `json:"baseRefName"`
+	ReviewDecision     string     `json:"reviewDecision"`
+	StatusRollup       []CheckRun `json:"statusCheckRollup"`
+	RequestedReviewers []User     `json:"reviewRequests"`
+	URL                string     `json:"url"`
+	CreatedAt          string     `json:"createdAt"`
 }
 
 type Filters struct {

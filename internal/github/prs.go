@@ -11,7 +11,7 @@ func FetchPRs(filters PRFilters) ([]PullRequest, error) {
 		"pr", "list",
 		"--state", filters.State,
 		"--limit", strconv.Itoa(filters.Limit),
-		"--json", "number,title,author,assignees,labels,state,isDraft,headRefName,baseRefName,statusCheckRollup,url",
+		"--json", "number,title,author,assignees,labels,state,isDraft,headRefName,baseRefName,statusCheckRollup,reviewRequests,url",
 	}
 	if filters.Author != "" {
 		args = append(args, "--author", filters.Author)
@@ -57,7 +57,7 @@ func FetchReviewRequests(limit int) ([]PullRequest, error) {
 func FetchPR(number int) (PullRequest, error) {
 	output, err := RunCommand(
 		"gh", "pr", "view", strconv.Itoa(number),
-		"--json", "number,title,body,author,assignees,labels,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,url,createdAt",
+		"--json", "number,title,body,author,assignees,labels,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,reviewRequests,url,createdAt",
 	)
 	if err != nil {
 		return PullRequest{}, err
@@ -96,6 +96,22 @@ func CreatePRFill() error {
 
 func RequestReview(number int, reviewer string) error {
 	_, err := RunCommand("gh", "pr", "edit", strconv.Itoa(number), "--add-reviewer", reviewer)
+	return err
+}
+
+// UpdatePRReviewers adds and removes reviewers in a single gh call.
+func UpdatePRReviewers(number int, add []string, remove []string) error {
+	if len(add) == 0 && len(remove) == 0 {
+		return nil
+	}
+	args := []string{"pr", "edit", strconv.Itoa(number)}
+	for _, login := range add {
+		args = append(args, "--add-reviewer", login)
+	}
+	for _, login := range remove {
+		args = append(args, "--remove-reviewer", login)
+	}
+	_, err := RunCommand("gh", args...)
 	return err
 }
 
