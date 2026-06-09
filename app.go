@@ -881,6 +881,10 @@ func detailActionFooter(m AppModel, width int) string {
 	var btns []KeyButton
 	switch {
 	case m.activeTab == TabIssues && m.issues.showDetail:
+		if m.issues.loadingAssigneeForm {
+			btns = nil // handled below via footerToast
+			return footerToast("Loading collaborators…", false, width, theme, pal)
+		}
 		if strings.EqualFold(m.issues.detailIssue.State, "closed") {
 			// Closed issue: only allow back, browser, help, and reopen.
 			btns = []KeyButton{
@@ -890,14 +894,10 @@ func detailActionFooter(m AppModel, width int) string {
 				kb(keys.IssueClose, "reopen", pal.Danger),
 			}
 		} else {
-			assignLabel := "assign"
-			if isMeAssigned(m.issues.detailIssue.Assignees, m.currentUser) {
-				assignLabel = "unassign"
-			}
 			btns = []KeyButton{
 				kb(keys.Back, "back", pal.Meta),
 				kb(keys.IssueClose, "close", pal.Danger),
-				kb(keys.IssueAssign, assignLabel, pal.Action),
+				kb(keys.IssueAssign, "assign", pal.Action),
 				kb(keys.IssueDevelop, "develop", pal.Action),
 				kb(keys.Browser, "browser", pal.Meta),
 				kb(keys.Help, "more actions", pal.Meta),
@@ -1010,21 +1010,14 @@ func footerView(m AppModel, width int, theme UITheme) string {
 				NewKeyButton("esc", "cancel", pal.Danger),
 			)
 		}
-		// Grab / Take / Drop label depends on the selected issue's assignees.
-		assignLabel, assignColor := "grab", pal.Action
-		if item, ok := m.issues.list.SelectedItem().(issueListItem); ok {
-			switch {
-			case isMeAssigned(item.issue.Assignees, m.currentUser):
-				assignLabel, assignColor = "drop", pal.Danger
-			case len(item.issue.Assignees) > 0:
-				assignLabel, assignColor = "take", pal.Meta
-			}
+		if m.issues.loadingAssigneeForm {
+			return footerToast("Loading collaborators…", false, width, theme, pal)
 		}
 		return RenderFooterBar(width, theme, pal,
 			kb(keys.Open, "open", pal.Action),
 			kb(keys.Browser, "browser", pal.Meta),
 			kb(keys.New, "new issue", pal.Action),
-			NewKeyButton(keys.IssueAssign.Help().Key, assignLabel, assignColor),
+			kb(keys.IssueAssign, "assign", pal.Action),
 			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	case TabPRs:
