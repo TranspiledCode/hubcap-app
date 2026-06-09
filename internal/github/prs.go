@@ -125,6 +125,22 @@ func UnassignPRSelf(number int) error {
 	return err
 }
 
+// UpdatePRAssignees adds and removes assignees on a PR in a single gh call.
+func UpdatePRAssignees(number int, add []string, remove []string) error {
+	if len(add) == 0 && len(remove) == 0 {
+		return nil
+	}
+	args := []string{"pr", "edit", strconv.Itoa(number)}
+	for _, login := range add {
+		args = append(args, "--add-assignee", login)
+	}
+	for _, login := range remove {
+		args = append(args, "--remove-assignee", login)
+	}
+	_, err := RunCommand("gh", args...)
+	return err
+}
+
 func FilterNonDraftPRs(prs []PullRequest) []PullRequest {
 	out := make([]PullRequest, 0, len(prs))
 	for _, pr := range prs {
