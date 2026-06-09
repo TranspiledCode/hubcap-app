@@ -115,13 +115,14 @@ const (
 // issueFormVals is heap-allocated so huh's Value() pointers remain valid
 // across BubbleTea value-receiver model copies.
 type issueFormVals struct {
-	formType      issueFormType
-	labelVal      string
-	branchVal     string
-	branchDefault string
-	newTitle      string
-	newBody       string
-	assigneeVal   string // selected login, or "" to clear all assignees
+	formType          issueFormType
+	labelVal          string
+	branchVal         string
+	branchDefault     string
+	newTitle          string
+	newBody           string
+	assigneeVals      []string // selected logins after multi-select
+	originalAssignees []string // assignees when the form was opened (for diffing)
 }
 
 // assigneeDataFetchedMsg carries the collaborator list fetched before showing
@@ -537,10 +538,8 @@ func (m IssuesModel) handleFormComplete() (IssuesModel, tea.Cmd) {
 		)
 
 	case issueFormAssign:
-		login := m.formVals.assigneeVal
+		// Resolve target issue.
 		issue := m.detailIssue
-		// Determine the target issue: detail view has a loaded issue; list view
-		// uses the currently selected item.
 		if issue.Number == 0 {
 			if item, ok := m.list.SelectedItem().(issueListItem); ok {
 				issue = item.issue
@@ -549,38 +548,54 @@ func (m IssuesModel) handleFormComplete() (IssuesModel, tea.Cmd) {
 		if issue.Number == 0 {
 			return m, nil
 		}
-		if login == "" {
-			// Clear all assignees.
-			assignees := make([]string, len(issue.Assignees))
-			for i, u := range issue.Assignees {
-				assignees[i] = u.Login
-			}
-			m.actionPending = "Clearing assignees…"
-			m.actionMsg = ""
-			m.actionErr = nil
-			num := issue.Number
-			return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-				if err := github.ClearIssueAssignees(num, assignees); err != nil {
-					return issueActionErrMsg{err: err}
-				}
-				return issueActionDoneMsg{
-					message:       "Assignees cleared.",
-					number:        num,
-					silentRefresh: true,
-				}
-			})
+
+		// Diff: compute logins to add and remove.
+		newSet := make(map[string]bool, len(m.formVals.assigneeVals))
+		for _, l := range m.formVals.assigneeVals {
+			newSet[l] = true
 		}
-		m.actionPending = fmt.Sprintf("Assigning to @%s…", login)
+		oldSet := make(map[string]bool, len(m.formVals.originalAssignees))
+		for _, l := range m.formVals.originalAssignees {
+			oldSet[l] = true
+		}
+		var add, remove []string
+		for l := range newSet {
+			if !oldSet[l] {
+				add = append(add, l)
+			}
+		}
+		for l := range oldSet {
+			if !newSet[l] {
+				remove = append(remove, l)
+			}
+		}
+		if len(add) == 0 && len(remove) == 0 {
+			return m, nil // nothing changed
+		}
+
+		// Build a human-readable summary for the pending toast.
+		pending := "Updating assignees…"
+		var done string
+		switch {
+		case len(add) > 0 && len(remove) > 0:
+			done = fmt.Sprintf("Assignees updated (+%d / -%d).", len(add), len(remove))
+		case len(add) > 0:
+			done = fmt.Sprintf("Assigned @%s.", strings.Join(add, ", @"))
+		default:
+			done = fmt.Sprintf("Unassigned @%s.", strings.Join(remove, ", @"))
+		}
+
+		m.actionPending = pending
 		m.actionMsg = ""
 		m.actionErr = nil
 		num := issue.Number
 		inDetail := m.showDetail
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			if err := github.AssignIssue(num, login); err != nil {
+			if err := github.UpdateIssueAssignees(num, add, remove); err != nil {
 				return issueActionErrMsg{err: err}
 			}
 			return issueActionDoneMsg{
-				message:       fmt.Sprintf("Assigned to @%s.", login),
+				message:       done,
 				number:        num,
 				silentRefresh: !inDetail,
 			}
@@ -728,31 +743,52 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 
 	case assigneeDataFetchedMsg:
 		m.loadingAssigneeForm = false
+
+		// Resolve current assignees from detail view or selected list item.
+		var currentAssignees []string
+		if m.showDetail {
+			for _, u := range m.detailIssue.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		} else if item, ok := m.list.SelectedItem().(issueListItem); ok {
+			for _, u := range item.issue.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		}
+		m.formVals.originalAssignees = currentAssignees
+		m.formVals.assigneeVals = append([]string(nil), currentAssignees...)
+		m.formVals.formType = issueFormAssign
+
 		if msg.err != nil || len(msg.assignees) == 0 {
 			// Fallback: plain text input if fetch failed or repo has no collaborators.
-			m.formVals.assigneeVal = ""
-			m.formVals.formType = issueFormAssign
+			m.formVals.assigneeVals = nil
 			m.activeForm = huh.NewForm(huh.NewGroup(
 				huh.NewInput().
 					Title("Assign to").
 					Placeholder("GitHub username").
-					Value(&m.formVals.assigneeVal),
+					Value(&m.formVals.labelVal), // reuse labelVal as scratch space
 			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 			return m, m.activeForm.Init()
 		}
-		// Build options: "(clear)" first, then each collaborator.
-		opts := make([]huh.Option[string], 0, len(msg.assignees)+1)
-		opts = append(opts, huh.NewOption("(clear / unassign)", ""))
-		for _, a := range msg.assignees {
-			opts = append(opts, huh.NewOption(a, a))
+
+		// Build multi-select options, pre-checking any current assignees.
+		opts := make([]huh.Option[string], len(msg.assignees))
+		for i, a := range msg.assignees {
+			opt := huh.NewOption(a, a)
+			for _, cur := range currentAssignees {
+				if cur == a {
+					opt = opt.Selected(true)
+					break
+				}
+			}
+			opts[i] = opt
 		}
-		m.formVals.assigneeVal = msg.assignees[0]
-		m.formVals.formType = issueFormAssign
 		m.activeForm = huh.NewForm(huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Assign to").
+			huh.NewMultiSelect[string]().
+				Title("Assignees").
+				Description("Space to toggle, enter to confirm, esc to cancel").
 				Options(opts...).
-				Value(&m.formVals.assigneeVal),
+				Value(&m.formVals.assigneeVals),
 		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
