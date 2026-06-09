@@ -910,6 +910,12 @@ func renderMarkdown(body string, width int, docBg string) string {
 		return body
 	}
 	if docBg != "" {
+		// Trim blank lines that glamour emits from Document BlockPrefix/BlockSuffix
+		// ("\n" each). Those bare newlines render on the terminal default (black)
+		// regardless of per-line bg injection because they carry no ANSI codes.
+		// The outer Padding(0,2).Background(BgBody) wrapper provides spacing.
+		out = strings.TrimLeft(out, "\n")
+		out = strings.TrimRight(out, "\n") + "\n"
 		out = injectDocBg(out, docBg)
 	}
 	return out
