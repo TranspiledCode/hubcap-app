@@ -970,5 +970,10 @@ func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string
 // Action feedback (toast) is shown in the footer bar by AppModel so it never
 // changes the body height.
 func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error, pal Palette) string {
-	return lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal)) + "\n"
+	view := lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal))
+	// The blank separator line between the viewport and footer must be
+	// explicitly parchment-coloured; a bare \n after a lipgloss reset would
+	// render on the terminal default (black) for light themes.
+	spacer := lipgloss.NewStyle().Background(pal.BgBody).Width(vp.Width + 4).Render("")
+	return view + spacer + "\n"
 }
