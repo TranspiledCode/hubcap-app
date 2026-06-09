@@ -36,7 +36,28 @@ const (
 	// spacer(1) + title(1) + thinGap(1) + assignee/type/author/created(1)
 	// + halfGap(1) + labels(1) + halfGap(1) + separator(1) = 8
 	metaStripExpandedHeight = 8
+
+	// detailViewportOverhead is the number of non-viewport lines consumed in
+	// the detail layout aside from the header and meta strip:
+	//   border(2) + spacer_below_viewport(1) + min_footer(1) = 4
+	// For Comfortable theme, add 3 more (separator + 3 button rows).
+	detailViewportOverheadBase = 4
 )
+
+// detailViewportHeight returns the exact number of lines the viewport can use
+// in a detail view, given the total terminal height, meta strip height, and
+// theme. It accounts for: border(2), header, meta strip, spacer(1), footer.
+func detailViewportHeight(termH, metaH int, theme UITheme) int {
+	footerL := 1
+	if theme == ThemeComfortable {
+		footerL = 4
+	}
+	h := termH - detailViewportOverheadBase - headerHeightDetail - metaH - (footerL - 1)
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
 
 // headerView returns the header as a string for use in bubbletea View() functions.
 func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64, pal Palette) string {
@@ -197,8 +218,9 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 			}
 			filterContent = indent +
 				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
-				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" open PRs") + sep +
-				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned")
+				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" my PRs") + sep +
+				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned issues") + sep +
+				countOrDash(counts.AssignedPRs) + filterKeyStyle.Render(" assigned PRs")
 		}
 		b.WriteString(filterContent + "\n")
 		// Separator between filter bar and content body, plus a blank line of breathing room.

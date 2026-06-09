@@ -41,7 +41,7 @@ func InitIssueFilterVals(vals *IssueFilterVals, filters github.Filters, assignee
 
 // BuildIssueFilterForm constructs a *huh.Form bound to vals. Call form.Init()
 // to start it; route messages through form.Update(msg) inside your model.
-func BuildIssueFilterForm(vals *IssueFilterVals, assignees []string, labels []string) *huh.Form {
+func BuildIssueFilterForm(vals *IssueFilterVals, assignees []string, labels []string, pal Palette) *huh.Form {
 	groupFields := []huh.Field{
 		huh.NewSelect[string]().
 			Title("State").
@@ -107,7 +107,7 @@ func BuildIssueFilterForm(vals *IssueFilterVals, assignees []string, labels []st
 			Value(&vals.ActionChoice),
 	)
 
-	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(huh.ThemeCatppuccin())
+	return huh.NewForm(huh.NewGroup(groupFields...)).WithTheme(buildHuhTheme(pal)).WithShowHelp(false)
 }
 
 // ResolveIssueFilters reads the completed vals and returns an updated Filters.

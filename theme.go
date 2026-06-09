@@ -1,6 +1,6 @@
 // theme.go — colour palette definitions for hubcap's named themes.
 //
-// A Palette holds every semantic colour role used across the UI. Five named
+// A Palette holds every semantic colour role used across the UI. Six named
 // palettes are provided:
 //
 //	"default"    — the original dark terminal look (amber + green)
@@ -8,11 +8,15 @@
 //	"cobalt2"    — West Bostis Cobalt 2 (deep blue + mint + yellow + hot pink)
 //	"imagescoop" — ImageScoop brand (periwinkle + purple + lime + hot pink)
 //	"parchment"  — light warm paper with jewel-tone accents (emerald + amethyst + sapphire + ruby)
+//	"latte"      — Catppuccin Latte light (cool grey base, mauve + blue accents)
 //
 // Switch themes via the config form (,) or the t key in any view.
 package main
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Palette groups every semantic colour role used in the UI.
 type Palette struct {
@@ -83,15 +87,17 @@ const (
 	ColorThemeCobalt2    = "cobalt2"
 	ColorThemeImageScoop = "imagescoop"
 	ColorThemeParchment  = "parchment"
+	ColorThemeLatte      = "latte"
 )
 
 // colorThemeOrder is the cycle order used by the ThemeCycle key.
 var colorThemeOrder = []string{
 	ColorThemeDefault,
-	ColorThemeTranspiled,
 	ColorThemeCobalt2,
+	ColorThemeTranspiled,
 	ColorThemeImageScoop,
 	ColorThemeParchment,
+	ColorThemeLatte,
 }
 
 // ── Palette definitions ───────────────────────────────────────────────────────
@@ -299,49 +305,107 @@ var paletteImageScoop = Palette{
 }
 
 // paletteParchment is a light theme built on warm antique-paper backgrounds.
-// Jewel-tone accents — emerald (#1A7A4A), amethyst (#7C3D9B), sapphire
-// (#1565C0), and ruby (#B5272B) — pop vividly against the creamy base.
+// Brighter jewel-tone accents — emerald (#10B981), violet (#8B5CF6), azure
+// (#3B82F6), and rose (#E11D48) — pop vividly against the creamy base.
+// Text uses deep charcoal for strong contrast on the light background.
 var paletteParchment = Palette{
-	Action: lipgloss.Color("#1A7A4A"), // emerald green — "do it" actions
-	Meta:   lipgloss.Color("#7C3D9B"), // amethyst violet — structural / nav
-	Danger: lipgloss.Color("#B5272B"), // ruby red — destructive
+	Action: lipgloss.Color("#10B981"), // bright emerald — "do it" actions
+	Meta:   lipgloss.Color("#8B5CF6"), // bright violet — structural / nav
+	Danger: lipgloss.Color("#E11D48"), // bright rose — destructive
 
-	Accent: lipgloss.Color("#1565C0"), // sapphire blue — cursor bar, spinner
-	Title:  lipgloss.Color("#7C3D9B"), // amethyst — titles, app border
-	Number: lipgloss.Color("#1565C0"), // sapphire — issue/PR numbers
+	Accent: lipgloss.Color("#3B82F6"), // bright azure — cursor bar, spinner
+	Title:  lipgloss.Color("#8B5CF6"), // violet — titles, app border
+	Number: lipgloss.Color("#3B82F6"), // azure — issue/PR numbers
 
-	Text:      lipgloss.Color("#3C3228"), // warm espresso brown — body text
-	TextBold:  lipgloss.Color("#1A1210"), // near-black — selected / highlighted
-	TextMuted: lipgloss.Color("#756860"), // medium warm brown — authors, secondary
-	TextDim:   lipgloss.Color("#9E8E80"), // lighter warm brown — timestamps
-	TextFaint: lipgloss.Color("#C2B4A4"), // faint warm beige — separator lines
+	Text:      lipgloss.Color("#2D2A26"), // deep charcoal — body text
+	TextBold:  lipgloss.Color("#1A1815"), // near-black — selected / highlighted
+	TextMuted: lipgloss.Color("#6B6560"), // medium warm grey — authors, secondary
+	TextDim:   lipgloss.Color("#8A847E"), // lighter warm grey — timestamps
+	TextFaint: lipgloss.Color("#B8B2AC"), // faint warm beige — separator lines
 
-	BgBody:     lipgloss.Color("#F2ECD8"), // warm cream — main content area
-	BgHeader:   lipgloss.Color("#E0D9C4"), // warm parchment — title bar
-	BgTabs:     lipgloss.Color("#E8E1CD"), // slightly lighter — tab row
-	BgSelected: lipgloss.Color("#D9D1BC"), // warm tan — selected item
-	BgFooter:   lipgloss.Color("#E0D9C4"), // same as header — footer bar
-	BgComfy:    lipgloss.Color("#D6CEB8"), // a touch darker — comfortable footer
+	BgBody:     lipgloss.Color("#F5F0E6"), // warm cream — main content area
+	BgHeader:   lipgloss.Color("#E8E2D6"), // warm parchment — title bar
+	BgTabs:     lipgloss.Color("#EDE7DB"), // slightly lighter — tab row
+	BgSelected: lipgloss.Color("#D9D3C7"), // warm tan — selected item
+	BgFooter:   lipgloss.Color("#E8E2D6"), // same as header — footer bar
+	BgComfy:    lipgloss.Color("#DCD6CA"), // a touch darker — comfortable footer
 
-	StatusOpen:   lipgloss.Color("#1A7A4A"), // emerald — open
-	StatusClosed: lipgloss.Color("#B5272B"), // ruby — closed
-	StatusMerged: lipgloss.Color("#7C3D9B"), // amethyst — merged
-	StatusDraft:  lipgloss.Color("#D45D00"), // burnt sienna — draft
+	StatusOpen:   lipgloss.Color("#10B981"), // bright emerald — open
+	StatusClosed: lipgloss.Color("#E11D48"), // bright rose — closed
+	StatusMerged: lipgloss.Color("#8B5CF6"), // bright violet — merged
+	StatusDraft:  lipgloss.Color("#F59E0B"), // bright amber — draft
 
-	CheckPass:    lipgloss.Color("#1A7A4A"),
-	CheckFail:    lipgloss.Color("#B5272B"),
-	CheckPending: lipgloss.Color("#D45D00"),
+	CheckPass:    lipgloss.Color("#10B981"),
+	CheckFail:    lipgloss.Color("#E11D48"),
+	CheckPending: lipgloss.Color("#F59E0B"),
 
-	LabelDanger:  lipgloss.Color("#B5272B"), // ruby red
-	LabelWarn:    lipgloss.Color("#C07800"), // golden amber
-	LabelSuccess: lipgloss.Color("#1A7A4A"), // emerald
-	LabelFeature: lipgloss.Color("#1565C0"), // sapphire
-	LabelDocs:    lipgloss.Color("#7C3D9B"), // amethyst
-	LabelSubtle:  lipgloss.Color("#7A7060"), // muted warm grey-brown
-	LabelDefault: lipgloss.Color("#5C3D1E"), // warm cocoa
+	LabelDanger:  lipgloss.Color("#E11D48"), // bright rose
+	LabelWarn:    lipgloss.Color("#F59E0B"), // bright amber
+	LabelSuccess: lipgloss.Color("#10B981"), // bright emerald
+	LabelFeature: lipgloss.Color("#3B82F6"), // bright azure
+	LabelDocs:    lipgloss.Color("#8B5CF6"), // bright violet
+	LabelSubtle:  lipgloss.Color("#9CA3AF"), // cool grey — effort/size
+	LabelDefault: lipgloss.Color("#6B7280"), // medium grey — fallback
 
 	LabelDangerFg:  lipgloss.Color("15"),
 	LabelWarnFg:    lipgloss.Color("15"),
+	LabelSuccessFg: lipgloss.Color("15"),
+	LabelFeatureFg: lipgloss.Color("15"),
+	LabelDocsFg:    lipgloss.Color("15"),
+	LabelSubtleFg:  lipgloss.Color("15"),
+	LabelDefaultFg: lipgloss.Color("15"),
+}
+
+// paletteLatte mirrors the Catppuccin Latte palette — a cool-grey light theme
+// popular in the developer community. Backgrounds are soft blue-greys (Base →
+// Crust); accents use Mauve (#8839EF) as the primary and Blue (#1E66F5) for
+// numbers. Status colours follow Catppuccin's canonical Green / Red / Mauve /
+// Peach assignments.
+//
+// Official spec: https://catppuccin.com/palette
+var paletteLatte = Palette{
+	Action: lipgloss.Color("#40A02B"), // green  — "do it" actions
+	Meta:   lipgloss.Color("#7287FD"), // lavender — structural / nav
+	Danger: lipgloss.Color("#D20F39"), // red    — destructive
+
+	Accent: lipgloss.Color("#8839EF"), // mauve  — cursor bar, spinner, active tab
+	Title:  lipgloss.Color("#8839EF"), // mauve  — app title, detail titles
+	Number: lipgloss.Color("#1E66F5"), // blue   — issue / PR numbers
+
+	// Catppuccin Latte text ramp: Text → Subtext1 → Overlay2 → Overlay1 → Surface2
+	Text:      lipgloss.Color("#4C4F69"), // Text     — primary body text
+	TextBold:  lipgloss.Color("#1C1F26"), // near-black — selected / highlighted
+	TextMuted: lipgloss.Color("#7C7F93"), // Overlay2  — authors, secondary labels
+	TextDim:   lipgloss.Color("#8C8FA1"), // Overlay1  — timestamps, inactive meta
+	TextFaint: lipgloss.Color("#ACB0BE"), // Surface2  — separator rules
+
+	// Catppuccin Latte background ramp: Base → Mantle → Crust → Surface0
+	BgBody:     lipgloss.Color("#EFF1F5"), // Base     — main content area
+	BgHeader:   lipgloss.Color("#E6E9EF"), // Mantle   — title bar
+	BgTabs:     lipgloss.Color("#DCE0E8"), // Crust    — tab bar row
+	BgSelected: lipgloss.Color("#CCD0DA"), // Surface0 — selected list item
+	BgFooter:   lipgloss.Color("#E6E9EF"), // Mantle   — minimal footer
+	BgComfy:    lipgloss.Color("#CCD0DA"), // Surface0 — comfortable footer
+
+	StatusOpen:   lipgloss.Color("#40A02B"), // green  — open
+	StatusClosed: lipgloss.Color("#D20F39"), // red    — closed
+	StatusMerged: lipgloss.Color("#8839EF"), // mauve  — merged
+	StatusDraft:  lipgloss.Color("#FE640B"), // peach  — draft
+
+	CheckPass:    lipgloss.Color("#40A02B"), // green
+	CheckFail:    lipgloss.Color("#D20F39"), // red
+	CheckPending: lipgloss.Color("#DF8E1D"), // yellow
+
+	LabelDanger:  lipgloss.Color("#D20F39"), // red
+	LabelWarn:    lipgloss.Color("#DF8E1D"), // yellow
+	LabelSuccess: lipgloss.Color("#40A02B"), // green
+	LabelFeature: lipgloss.Color("#1E66F5"), // blue
+	LabelDocs:    lipgloss.Color("#209FB5"), // sapphire
+	LabelSubtle:  lipgloss.Color("#9CA0B0"), // Overlay0 — effort / size
+	LabelDefault: lipgloss.Color("#6C6F85"), // Subtext0 — fallback
+
+	LabelDangerFg:  lipgloss.Color("15"),
+	LabelWarnFg:    lipgloss.Color("0"),  // dark text on bright yellow
 	LabelSuccessFg: lipgloss.Color("15"),
 	LabelFeatureFg: lipgloss.Color("15"),
 	LabelDocsFg:    lipgloss.Color("15"),
@@ -361,6 +425,8 @@ func resolvePalette(s string) Palette {
 		return paletteImageScoop
 	case ColorThemeParchment:
 		return paletteParchment
+	case ColorThemeLatte:
+		return paletteLatte
 	default:
 		return paletteDefault
 	}
@@ -374,4 +440,79 @@ func nextColorTheme(current string) string {
 		}
 	}
 	return ColorThemeDefault
+}
+
+// buildHuhTheme constructs a *huh.Theme from the active Palette so that all
+// embedded forms (filter, config) inherit the current colour scheme instead of
+// always rendering with the hard-coded dark Catppuccin preset.
+func buildHuhTheme(pal Palette) *huh.Theme {
+	t := huh.ThemeBase()
+
+	// Apply body background to the form and group containers so that the
+	// overall form area carries the correct colour on light themes.
+	t.Form.Base = t.Form.Base.Background(pal.BgBody)
+	t.Group.Base = t.Group.Base.Background(pal.BgBody)
+
+	// Focused field: left-border colour + background + card match.
+	t.Focused.Base = t.Focused.Base.BorderForeground(pal.Accent).Background(pal.BgBody)
+	t.Focused.Card = t.Focused.Base
+
+	// Title / description.
+	t.Focused.Title = t.Focused.Title.Foreground(pal.Title).Bold(true)
+	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(pal.Title).Bold(true)
+	t.Focused.Directory = t.Focused.Directory.Foreground(pal.Title)
+	t.Focused.Description = t.Focused.Description.Foreground(pal.TextMuted)
+
+	// Error states.
+	t.Focused.ErrorIndicator = t.Focused.ErrorIndicator.Foreground(pal.Danger)
+	t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(pal.Danger)
+
+	// Navigation / selection indicators.
+	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(pal.Accent)
+	t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(pal.Accent)
+	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(pal.Accent)
+	t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(pal.Accent)
+
+	// Option rows.
+	t.Focused.Option = t.Focused.Option.Foreground(pal.Text)
+	t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(pal.Text)
+	t.Focused.UnselectedPrefix = t.Focused.UnselectedPrefix.Foreground(pal.TextMuted).SetString("[ ] ")
+	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(pal.Action)
+	t.Focused.SelectedPrefix = t.Focused.SelectedPrefix.Foreground(pal.Action).SetString("[•] ")
+
+	// Confirm buttons.
+	// FocusedButton: TextBold gives near-white on dark themes, near-black on
+	// light themes — both contrast well against Accent backgrounds.
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(pal.TextBold).Background(pal.Accent)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(pal.TextMuted).Background(pal.BgBody)
+
+	// Text input.
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(pal.Accent)
+	t.Focused.TextInput.CursorText = t.Focused.TextInput.CursorText.Foreground(pal.TextBold)
+	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(pal.TextFaint)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(pal.Accent)
+	t.Focused.TextInput.Text = t.Focused.TextInput.Text.Foreground(pal.Text)
+
+	// Blurred: inherit focused styles then restore blurred-specific overrides.
+	t.Blurred = t.Focused
+	t.Blurred.Base = t.Blurred.Base.BorderStyle(lipgloss.HiddenBorder())
+	t.Blurred.Card = t.Blurred.Base
+	t.Blurred.MultiSelectSelector = lipgloss.NewStyle().SetString("  ")
+	t.Blurred.NextIndicator = lipgloss.NewStyle()
+	t.Blurred.PrevIndicator = lipgloss.NewStyle()
+	t.Blurred.TextInput.Prompt = t.Blurred.TextInput.Prompt.Foreground(pal.TextMuted)
+
+	// Mini help bar shown inside the form.
+	t.Help.ShortKey = t.Help.ShortKey.Foreground(pal.TextMuted)
+	t.Help.ShortDesc = t.Help.ShortDesc.Foreground(pal.TextDim)
+	t.Help.ShortSeparator = t.Help.ShortSeparator.Foreground(pal.TextFaint)
+	t.Help.Ellipsis = t.Help.Ellipsis.Foreground(pal.TextFaint)
+	t.Help.FullKey = t.Help.FullKey.Foreground(pal.TextMuted)
+	t.Help.FullDesc = t.Help.FullDesc.Foreground(pal.TextDim)
+	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(pal.TextFaint)
+
+	t.Group.Title = t.Focused.Title
+	t.Group.Description = t.Focused.Description
+
+	return t
 }
