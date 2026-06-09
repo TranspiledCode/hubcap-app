@@ -610,7 +610,22 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dashboard.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 			m.themeToastMsg = "Theme: " + themeDisplayName(m.cfg.ColorTheme)
 			_ = saveConfig(m.cfg)
-			return m, tea.Batch(tea.ClearScreen, clearThemeToastCmd())
+			// Re-render any open detail viewport so its content uses the new
+			// theme's ANSI codes. Without this, parchment bg codes baked into
+			// the content persist after switching to a dark theme (and vice versa).
+			var themeCmds []tea.Cmd
+			themeCmds = append(themeCmds, tea.ClearScreen, clearThemeToastCmd())
+			if m.issues.showDetail {
+				m.issues.detail.Style = lipgloss.NewStyle().Background(pal.BgBody)
+				m.issues.detail.SetContent(lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("Rendering…") + "\n")
+				themeCmds = append(themeCmds, renderIssueContentCmd(m.issues.detailIssue, m.width, pal))
+			}
+			if m.prs.showDetail {
+				m.prs.detail.Style = lipgloss.NewStyle().Background(pal.BgBody)
+				m.prs.detail.SetContent(lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("Rendering…") + "\n")
+				themeCmds = append(themeCmds, renderPRContentCmd(m.prs.detailPR, m.width, pal))
+			}
+			return m, tea.Batch(themeCmds...)
 		case key.Matches(msg, keys.Filters) && !m.hasActiveForm():
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
 				m.filterLoading = true
