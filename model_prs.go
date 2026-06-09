@@ -623,7 +623,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailPR = msg.pr
-		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme))
 		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
@@ -724,7 +724,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = detailViewportHeight(m.height, metaStripHeight, m.uiTheme)
+			m.detail.Height = detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme)
 		}
 
 	case spinner.TickMsg:
@@ -960,7 +960,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
-					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme))
 					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
