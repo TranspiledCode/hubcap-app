@@ -21,9 +21,10 @@ import (
 // ── PR action messages ────────────────────────────────────────────────────────
 
 type prActionDoneMsg struct {
-	message    string
-	number     int  // PR to re-fetch after action (0 = don't re-fetch)
-	reloadList bool // refresh the full list (e.g. after creating a PR)
+	message       string
+	number        int  // PR to re-fetch after action (0 = don't re-fetch)
+	reloadList    bool // refresh the full list (e.g. after creating a PR)
+	silentRefresh bool // true → background-refresh the list without loading state
 }
 
 type prActionErrMsg struct {
@@ -38,9 +39,9 @@ type prContentRenderedMsg struct {
 
 // renderPRContentCmd renders PR detail content in a goroutine so the heavy
 // glamour call never blocks the BubbleTea Update loop.
-func renderPRContentCmd(pr github.PullRequest, width int) tea.Cmd {
+func renderPRContentCmd(pr github.PullRequest, width int, pal Palette) tea.Cmd {
 	return func() tea.Msg {
-		return prContentRenderedMsg{content: renderPRDetailContent(pr, width)}
+		return prContentRenderedMsg{content: renderPRDetailContent(pr, width, pal)}
 	}
 }
 
@@ -151,7 +152,7 @@ func (p prListItem) Description() string {
 	if p.pr.IsDraft {
 		status = "draft"
 	}
-	return fmt.Sprintf("%s  %s  %s", p.pr.Author.Login, status, summarizeChecks(p.pr.StatusRollup))
+	return fmt.Sprintf("%s  %s", p.pr.Author.Login, status)
 }
 func (p prListItem) FilterValue() string {
 	return fmt.Sprintf("%d %s", p.pr.Number, p.pr.Title)
@@ -163,10 +164,10 @@ func (p prListItem) FilterValue() string {
 // Line 1: [accent] ⤴ #N   Title…(fill)…  timestamp
 // Line 2: [accent]         @author  ·  checks  ·  labels  (fill)  head → base
 
-type prDelegate struct{}
+type prDelegate struct{ pal Palette }
 
-func (d prDelegate) Height() int                             { return 2 }
-func (d prDelegate) Spacing() int                            { return 1 }
+func (d prDelegate) Height() int                             { return 3 }
+func (d prDelegate) Spacing() int                            { return 0 }
 func (d prDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -178,39 +179,39 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	width := m.Width()
 	selected := index == m.Index()
 
-	selectedBg := lipgloss.Color("235")
+	selectedBg := d.pal.BgSelected
 	var base lipgloss.Style
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
 	} else {
-		base = lipgloss.NewStyle()
+		base = lipgloss.NewStyle().Background(d.pal.BgBody)
 	}
 
 	// Left accent bar — reused on both rows so the bar spans the full item height.
 	var accent string
 	if selected {
-		accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
-		accent = "  "
+		accent = base.Render("  ")
 	}
 
 	// ⤴ colored by state: green = open, purple = merged, red = closed, amber = draft.
 	var dotColor lipgloss.Color
 	switch {
 	case pr.IsDraft:
-		dotColor = lipgloss.Color("214")
+		dotColor = d.pal.StatusDraft
 	case strings.EqualFold(pr.State, "merged"):
-		dotColor = lipgloss.Color("141")
+		dotColor = d.pal.StatusMerged
 	case strings.EqualFold(pr.State, "closed"):
-		dotColor = lipgloss.Color("196")
+		dotColor = d.pal.StatusClosed
 	default:
-		dotColor = lipgloss.Color("83")
+		dotColor = d.pal.StatusOpen
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⤴")
 
 	// PR number — left-aligned in a 4-digit-wide field for stable columns.
-	numStyle := base.Foreground(lipgloss.Color("69"))
+	numStyle := base.Foreground(d.pal.Number)
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
@@ -219,15 +220,15 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	// Timestamp — rendered first so we know the width before sizing the title.
 	var tsStr string
 	if age := timeAgo(pr.CreatedAt); age != "" {
-		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
+		tsStr = base.Foreground(d.pal.TextDim).Render(age)
 	}
 	tsW := lipgloss.Width(tsStr)
 
 	// Title fills the space between the left prefix and the timestamp.
 	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
-	titleStyle := base.Foreground(lipgloss.Color("252"))
+	titleStyle := base.Foreground(d.pal.Text)
 	if selected {
-		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+		titleStyle = base.Foreground(d.pal.TextBold).Bold(true)
 	}
 	titleMaxW := width - 10 - 2 - tsW - 1
 	if titleMaxW < 20 {
@@ -247,13 +248,13 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	// ── Line 2 ──────────────────────────────────────────────────────────────
 	// indent = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	const lineIndent = 10
-	var bgKey string
+	bgKey := string(d.pal.BgBody)
 	if selected {
-		bgKey = "235"
+		bgKey = string(d.pal.BgSelected)
 	}
 
-	authorStyle := base.Foreground(lipgloss.Color("244"))
-	arrowStyle := base.Foreground(lipgloss.Color("252"))
+	authorStyle := base.Foreground(d.pal.TextMuted).Italic(true)
+	arrowStyle := base.Foreground(d.pal.Text)
 
 	// Branch direction acts as the right-side badge (like typeStr in issues).
 	var branchStr string
@@ -264,14 +265,14 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	branchW := lipgloss.Width(branchStr)
 
-	checksStr := prRowChecks(pr.StatusRollup, bgKey)
+	checksStr := prRowChecks(pr.StatusRollup, bgKey, d.pal)
 	checksW := lipgloss.Width(checksStr)
 
 	const (
 		sepW      = 5 // "  ·  "
 		branchGap = 2
 	)
-	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	dimSep := base.Foreground(d.pal.TextFaint).Render("  ·  ")
 
 	// Author takes ~30% of the content area; labels fill the rest.
 	contentW := width - lineIndent - branchGap - branchW - 1
@@ -299,9 +300,9 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 		shownLabels = pr.Labels[:maxLabels]
 		labelOverflow = len(pr.Labels) - maxLabels
 	}
-	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget)
+	labelStr := issueRowLabels(shownLabels, bgKey, labelBudget, d.pal)
 	if labelOverflow > 0 {
-		labelStr += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", labelOverflow))
+		labelStr += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
 	}
 
 	// Reuse accent on line 2 so the bar spans both rows.
@@ -329,11 +330,12 @@ func (d prDelegate) Render(w io.Writer, m list.Model, index int, item list.Item)
 	}
 	line2 += line2Fill + branchStr + base.Render(" ")
 
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
+	spacer := lipgloss.NewStyle().Background(d.pal.BgBody).Width(width).Render("")
+	fmt.Fprintf(w, "%s\n%s\n%s", line1, line2, spacer)
 }
 
 // prRowChecks returns a compact colored check-status symbol for a list row.
-func prRowChecks(checks []github.CheckRun, bgKey string) string {
+func prRowChecks(checks []github.CheckRun, bgKey string, pal Palette) string {
 	if len(checks) == 0 {
 		return ""
 	}
@@ -346,16 +348,16 @@ func prRowChecks(checks []github.CheckRun, bgKey string) string {
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return base.Foreground(lipgloss.Color("196")).Render("✗ failing")
+			return base.Foreground(pal.CheckFail).Italic(true).Render("✗ failing")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return base.Foreground(lipgloss.Color("214")).Render("… pending")
+		return base.Foreground(pal.CheckPending).Italic(true).Render("… pending")
 	}
-	return base.Foreground(lipgloss.Color("83")).Render("✓ passing")
+	return base.Foreground(pal.CheckPass).Italic(true).Render("✓ passing")
 }
 
 // ── PRsModel ──────────────────────────────────────────────────────────────────
@@ -391,6 +393,13 @@ type PRsModel struct {
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
 
+	// palette mirrors Config.ColorTheme for list item and detail colours.
+	palette Palette
+
+	// currentUser is the authenticated GitHub login, used to distinguish
+	// Grab / Take / Drop when the user presses 'a' on the PR list.
+	currentUser string
+
 	// Detail prefetch: while the user navigates the list, the next 2 items
 	// are fetched in the background and stored here. When the user presses
 	// Enter, the cached detail is used immediately — no loading spinner.
@@ -400,16 +409,19 @@ type PRsModel struct {
 	prefetchedDetails map[int]github.PullRequest
 }
 
-func newPRsModel(filters github.PRFilters) PRsModel {
+func newPRsModel(filters github.PRFilters, pal Palette) PRsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
-	l := list.New([]list.Item{}, prDelegate{}, 0, 0)
+	l := list.New([]list.Item{}, prDelegate{pal: pal}, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	l.Styles.NoItems = l.Styles.NoItems.Background(pal.BgBody).Foreground(pal.TextDim)
+	l.Styles.FilterPrompt = l.Styles.FilterPrompt.Background(pal.BgBody).Foreground(pal.TextMuted)
+	l.Styles.FilterCursor = l.Styles.FilterCursor.Background(pal.BgBody).Foreground(pal.Accent)
 	// Disable the list's built-in quit keybindings — must use this method, not
 	// SetEnabled(false), which gets overridden on every item load.
 	l.DisableQuitKeybindings()
@@ -425,6 +437,7 @@ func newPRsModel(filters github.PRFilters) PRsModel {
 		spinner:  s,
 		loading:  true,
 		filters:  filters,
+		palette:  pal,
 		formVals: &prFormVals{mergeType: "rebase", newBase: "main"},
 	}
 }
@@ -522,6 +535,12 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	// ── Embedded form takes priority ──────────────────────────────────────────
 	if m.activeForm != nil {
+		// Esc / b / backspace cancels the form without submitting.
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.activeForm = nil
+			m.formVals.formType = prFormNone
+			return m, nil
+		}
 		form, cmd := m.activeForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.activeForm = f
@@ -574,10 +593,11 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailPR = msg.pr
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
-		return m, renderPRContentCmd(msg.pr, m.width)
+		return m, renderPRContentCmd(msg.pr, m.width, m.palette)
 
 	case prContentRenderedMsg:
 		m.detail.SetContent(msg.content)
@@ -611,6 +631,9 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			m.loaded = false
 			return m, tea.Batch(m.fetchCmd(), m.spinner.Tick)
 		}
+		if msg.silentRefresh {
+			return m, tea.Batch(clearPRActionMsgCmd(), m.silentFetchCmd())
+		}
 		return m, clearPRActionMsgCmd()
 
 	case prActionErrMsg:
@@ -636,7 +659,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					Title("Request reviewer").
 					Placeholder("GitHub username").
 					Value(&m.formVals.reviewerVal),
-			)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 			return m, m.activeForm.Init()
 		}
 		opts := make([]huh.Option[string], len(msg.reviewers))
@@ -650,7 +673,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				Title("Request reviewer").
 				Options(opts...).
 				Value(&m.formVals.reviewerVal),
-		)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
 	case tea.WindowSizeMsg:
@@ -659,7 +682,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = m.height - headerHeightDetail - metaStripHeight - 2
+			m.detail.Height = detailViewportHeight(m.height, metaStripHeight, m.uiTheme)
 		}
 
 	case spinner.TickMsg:
@@ -757,6 +780,32 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				}
 				m.loadingReviewerForm = true
 				return m, tea.Batch(fetchReviewerDataCmd(), m.spinner.Tick)
+			case key.Matches(msg, keys.IssueAssign):
+				// Assign/unassign @me — not allowed on merged or closed PRs.
+				pr := m.detailPR
+				if strings.EqualFold(pr.State, "merged") || strings.EqualFold(pr.State, "closed") {
+					return m, nil
+				}
+				if isMeAssigned(pr.Assignees, m.currentUser) {
+					m.actionPending = "Unassigning from @me…"
+					m.actionMsg = ""
+					m.actionErr = nil
+					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+						if err := github.UnassignPRSelf(pr.Number); err != nil {
+							return prActionErrMsg{err: err}
+						}
+						return prActionDoneMsg{message: "Unassigned from @me.", number: pr.Number}
+					})
+				}
+				m.actionPending = "Assigning to @me…"
+				m.actionMsg = ""
+				m.actionErr = nil
+				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+					if err := github.AssignPRSelf(pr.Number); err != nil {
+						return prActionErrMsg{err: err}
+					}
+					return prActionDoneMsg{message: "Assigned to @me.", number: pr.Number}
+				})
 			case key.Matches(msg, keys.PRMerge):
 				// Merge — not allowed on already merged or closed PRs.
 				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
@@ -775,7 +824,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 							huh.NewOption("Merge commit", "merge"),
 						).
 						Value(&m.formVals.mergeType),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Top):
 				m.detail.GotoTop()
@@ -798,6 +847,39 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				if item, ok := m.list.SelectedItem().(prListItem); ok {
 					url := item.pr.URL
 					return m, func() tea.Msg { github.OpenURL(url); return nil }
+				}
+			case key.Matches(msg, keys.IssueAssign):
+				if item, ok := m.list.SelectedItem().(prListItem); ok {
+					pr := item.pr
+					if isMeAssigned(pr.Assignees, m.currentUser) {
+						// Drop — remove @me, leave any other assignees.
+						m.actionPending = "Dropping…"
+						m.actionMsg = ""
+						m.actionErr = nil
+						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+							if err := github.UnassignPRSelf(pr.Number); err != nil {
+								return prActionErrMsg{err: err}
+							}
+							return prActionDoneMsg{message: "Dropped.", silentRefresh: true}
+						})
+					}
+					// Grab (unassigned) or Take (assigned to someone else).
+					verb := "Grabbing…"
+					done := "Grabbed."
+					if len(pr.Assignees) > 0 {
+						verb = "Taking…"
+						done = "Taken."
+					}
+					m.actionPending = verb
+					m.actionMsg = ""
+					m.actionErr = nil
+					doneMsg := done
+					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+						if err := github.AssignPRSelf(pr.Number); err != nil {
+							return prActionErrMsg{err: err}
+						}
+						return prActionDoneMsg{message: doneMsg, silentRefresh: true}
+					})
 				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
@@ -822,7 +904,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 					huh.NewConfirm().
 						Title("Draft PR?").
 						Value(&m.formVals.newDraft),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
@@ -836,11 +918,12 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
-					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-metaStripHeight-2)
-					m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.pr.Number)
-					cmds = append(cmds, renderPRContentCmd(prefetched, m.width))
+					cmds = append(cmds, renderPRContentCmd(prefetched, m.width, m.palette))
 				} else {
 					m.loadingDetail = true
 					cmds = append(cmds, fetchPRDetailCmd(item.pr.Number))
@@ -873,7 +956,11 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 func (m PRsModel) View() string {
 	// When a form is active, render it — replacing list/detail content.
 	if m.activeForm != nil {
-		return m.activeForm.View()
+		body := m.activeForm.View()
+		if bg := string(m.palette.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+		return body
 	}
 
 	var b strings.Builder
@@ -888,35 +975,40 @@ func (m PRsModel) View() string {
 				return 0
 			}())
 		}
-		b.WriteString(fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg))
-		return b.String()
+		line := fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg)
+		if bg := string(m.palette.BgBody); bg != "" {
+			line = injectDocBg(line, bg)
+		}
+		return line
 	}
 
 	if m.err != nil {
-		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err)))
+		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err), m.palette))
 		return b.String()
 	}
 
 	if m.showDetail {
-		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4))
-		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr))
+		b.WriteString(renderPRMetaStrip(m.detailPR, m.width-4, m.palette))
+		b.WriteString(renderPRDetailView(m.detailPR, m.detail, m.actionMsg, m.actionErr, m.palette))
 		return b.String()
 	}
 
-	b.WriteString(lipgloss.NewStyle().Margin(0, 2).Render(m.list.View()))
+	b.WriteString(lipgloss.NewStyle().Padding(0, 2).Background(m.palette.BgBody).Render(m.list.View()))
 	return b.String()
 }
 
 // renderPRDetailContent builds scrollable body-only content for the viewport.
-func renderPRDetailContent(pr github.PullRequest, width int) string {
+func renderPRDetailContent(pr github.PullRequest, width int, pal Palette) string {
 	if pr.Body == "" {
-		return styleGray.Render("No description.") + "\n"
+		return lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("No description.") + "\n"
 	}
-	return renderMarkdown(pr.Body, width-4)
+	return renderMarkdown(pr.Body, width-4, string(pal.BgBody))
 }
 
 // renderPRDetailView renders the scrollable viewport only.
 // Action feedback (toast) is shown in the footer bar by AppModel.
-func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
+func renderPRDetailView(_ github.PullRequest, vp viewport.Model, _ string, _ error, pal Palette) string {
+	view := lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal))
+	spacer := lipgloss.NewStyle().Background(pal.BgBody).Width(vp.Width + 4).Render("")
+	return view + "\n" + spacer + "\n"
 }

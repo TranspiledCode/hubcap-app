@@ -4,157 +4,19 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
-	"text/tabwriter"
 	"time"
 
 	"hubcap/internal/github"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
+	glamourstyles "github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Lipgloss styles
-var (
-	// Base colors
-	styleReset  = lipgloss.NewStyle()
-	styleGreen  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	styleYellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleRed    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	stylePurple = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	styleGray   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleCyan   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	styleOrange = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
-	styleTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
-	// Box styles for messages
-	errorBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("1")).
-			Padding(0, 1).
-			Foreground(lipgloss.Color("1"))
-	warningBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("3")).
-			Padding(0, 1).
-			Foreground(lipgloss.Color("3"))
-	successBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("2")).
-			Padding(0, 1).
-			Foreground(lipgloss.Color("2"))
-	infoBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("6")).
-			Padding(0, 1).
-			Foreground(lipgloss.Color("6"))
-
-	// Status bar style
-	statusBarStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("237")).
-			Foreground(lipgloss.Color("252")).
-			Padding(0, 1)
-	statusBarAccent = lipgloss.NewStyle().
-			Background(lipgloss.Color("237")).
-			Foreground(lipgloss.Color("208")).
-			Bold(true).
-			Padding(0, 1)
-
-	// Legacy compatibility constants (for gradual migration)
-	colorReset  = ""
-	colorGreen  = ""
-	colorYellow = ""
-	colorRed    = ""
-	colorPurple = ""
-	colorGray   = ""
-	colorSelect = ""
-	colorOrange = ""
-	colorTitle  = ""
-	colorSelBg  = ""
-)
-
-func renderHeader(state *AppState, rawMode bool) {
-	nl := "\n"
-	if rawMode {
-		nl = "\033[K\r\n"
-	}
-	_, cols := termSize()
-	sep := strings.Repeat("─", cols)
-
-	plainMyWork := "  1: Dashboard  "
-	plainIssues := "  2: Issues  "
-	plainPRs := "  3: Pull Requests  "
-	myWorkLabel := plainMyWork
-	issuesLabel := plainIssues
-	prsLabel := plainPRs
-	switch state.ActiveTab {
-	case TabDashboard:
-		myWorkLabel = styleCyan.Render(myWorkLabel)
-	case TabIssues:
-		issuesLabel = styleCyan.Render(issuesLabel)
-	case TabPRs:
-		prsLabel = styleCyan.Render(prsLabel)
-	}
-	tabWidth := len(plainMyWork) + len(plainIssues) + len(plainPRs)
-	tabPad := ""
-	if cols > tabWidth {
-		tabPad = strings.Repeat(" ", cols-tabWidth)
-	}
-
-	// Line 1: version (left) + help hint (right)
-	verText := "  v" + version
-	helpText := "[?] help  "
-	verLen := len([]rune(verText))
-	helpLen := len([]rune(helpText))
-	gap := cols - verLen - helpLen
-	if gap < 0 {
-		gap = 0
-	}
-	fmt.Printf("%s%s", styleTitle.Render(verText+strings.Repeat(" ", gap)+helpText), nl)
-
-	// Line 2: centered title
-	title := "Hubcap — " + state.Repo
-	tLen := len([]rune(title))
-	lPad, rPad := 0, 0
-	if cols > tLen {
-		lPad = (cols - tLen) / 2
-		rPad = cols - tLen - lPad
-	}
-	fmt.Printf("%s%s", styleTitle.Render(strings.Repeat(" ", lPad)+title+strings.Repeat(" ", rPad)), nl)
-
-	// Line 3: blank
-	fmt.Printf("%s%s", styleTitle.Render(strings.Repeat(" ", cols)), nl)
-	fmt.Printf("%s%s", sep, nl)
-	fmt.Printf("%s%s%s%s%s", myWorkLabel, issuesLabel, prsLabel, tabPad, nl)
-	fmt.Printf("%s%s", sep, nl)
-
-	dim := styleGray
-	switch state.ActiveTab {
-	case TabDashboard:
-		if state.DashboardStatus != "" {
-			fmt.Printf("%s%s", state.DashboardStatus, nl)
-		} else {
-			fmt.Printf("%s%s", styleGray.Render("Loading..."), nl)
-		}
-	case TabIssues:
-		f := state.IssueFilters
-		fmt.Printf("%s %s %s %s %s %s %s %s %s",
-			dim.Render("State:"), colorState(f.State),
-			dim.Render("Assignee:"), colorVal(displayAny(f.Assignee)),
-			dim.Render("Label:"), colorVal(displayAny(f.Label)),
-			dim.Render("Limit:"), styleGray.Render(fmt.Sprintf("%d", f.Limit)), nl)
-	case TabPRs:
-		f := state.PRFilters
-		fmt.Printf("%s %s %s %s %s %s %s %s %s",
-			dim.Render("State:"), colorState(f.State),
-			dim.Render("Assignee:"), colorVal(displayAny(f.Assignee)),
-			dim.Render("Label:"), colorVal(displayAny(f.Label)),
-			dim.Render("Limit:"), styleGray.Render(fmt.Sprintf("%d", f.Limit)), nl)
-	}
-	fmt.Printf("%s%s", sep, nl)
-	fmt.Print(nl)
-}
 
 const (
 	// headerHeightFull is the line count of headerView when the filter bar is shown.
@@ -174,41 +36,62 @@ const (
 	// spacer(1) + title(1) + thinGap(1) + assignee/type/author/created(1)
 	// + halfGap(1) + labels(1) + halfGap(1) + separator(1) = 8
 	metaStripExpandedHeight = 8
+
+	// detailViewportOverhead is the number of non-viewport lines consumed in
+	// the detail layout aside from the header and meta strip:
+	//   border(2) + spacer_below_viewport(1) + min_footer(1) = 4
+	// For Comfortable theme, add 3 more (separator + 3 button rows).
+	detailViewportOverheadBase = 4
 )
 
+// detailViewportHeight returns the exact number of lines the viewport can use
+// in a detail view, given the total terminal height, meta strip height, and
+// theme. It accounts for: border(2), header, meta strip, spacer(1), footer.
+func detailViewportHeight(termH, metaH int, theme UITheme) int {
+	footerL := 1
+	if theme == ThemeComfortable {
+		footerL = 4
+	}
+	h := termH - detailViewportOverheadBase - headerHeightDetail - metaH - (footerL - 1)
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
 // headerView returns the header as a string for use in bubbletea View() functions.
-func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64) string {
+func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64, pal Palette) string {
 	if width == 0 {
 		width = 80
 	}
 	var b strings.Builder
 
-	bg := lipgloss.Color("235")
-	tabBg := lipgloss.Color("236")
+	bg := pal.BgHeader
+	tabBg := pal.BgTabs
 
 	topBarStyle := lipgloss.NewStyle().Background(bg)
-	versionStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("240"))
-	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("208")).Bold(true)
-	helpStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("244"))
-	refreshStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("86")).Bold(true)
+	versionStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.TextDim)
+	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.Title).Bold(true)
+	helpStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.TextMuted)
+	refreshStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.Accent).Bold(true)
 
 	tabActiveStyle := lipgloss.NewStyle().
 		Background(tabBg).
-		Foreground(lipgloss.Color("86")).
+		Foreground(pal.Accent).
 		Bold(true).
 		Padding(0, 2)
 	tabInactiveStyle := lipgloss.NewStyle().
 		Background(tabBg).
-		Foreground(lipgloss.Color("244")).
+		Foreground(pal.TextMuted).
 		Padding(0, 2)
 	tabFillStyle := lipgloss.NewStyle().Background(tabBg)
 
-	// Filter bar — transparent background, matches the body surface.
-	filterKeyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	filterValStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	filterValOnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	filterSepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	filterHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Filter bar — body background so light themes don't show terminal default.
+	filterKeyStyle := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	filterValStyle := lipgloss.NewStyle().Foreground(pal.Text).Background(pal.BgBody)
+	filterValOnStyle := lipgloss.NewStyle().Foreground(pal.Accent).Background(pal.BgBody)
+	filterSepStyle := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody)
+	filterHintStyle := lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody)
 
 	// ── Line 1: version · centered title · auto-refresh · [?] help ─────────
 	verText := "v" + version
@@ -258,8 +141,8 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		line1 += topBarStyle.Render(strings.Repeat(" ", width-line1Width))
 	}
 	b.WriteString(line1 + "\n")
-	// ▄ transition: top half = title bg (235), bottom half = tab bg (236)
-	b.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("236")).Render(strings.Repeat("▄", width)) + "\n")
+	// ▄ transition: top half = title bg, bottom half = tab bg
+	b.WriteString(lipgloss.NewStyle().Background(pal.BgHeader).Foreground(pal.BgTabs).Render(strings.Repeat("▄", width)) + "\n")
 
 	// ── Line 2: tabs ──────────────────────────────────────────────────────
 	tabActiveStyle = tabActiveStyle.Underline(true)
@@ -290,27 +173,28 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		fill = 0
 	}
 	b.WriteString(tabRow.String() + tabFillStyle.Render(strings.Repeat(" ", fill)) + "\n")
-	// ▀ half-space: top half = tab bg (236), bottom half = transparent body.
+	// ▀ half-space: top half = tab bg, bottom half = body bg.
 	// Provides a visual half-line of breathing room below the tab bar in all views.
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("▀", width)) + "\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(pal.BgTabs).Background(pal.BgBody).Render(strings.Repeat("▀", width)) + "\n")
 
 	// ── Line 4+: filter/context bar (list views only) ──────────────────────
 	if !detailActive {
 		sep := filterSepStyle.Render("  │  ")
+		indent := filterKeyStyle.Render("  ")
 		fmtFilter := func(key, val string) string {
 			active := val != "" && val != "any"
 			v := filterValStyle
 			if active {
 				v = filterValOnStyle
 			}
-			return filterKeyStyle.Render(key+":") + " " + v.Render(val)
+			return filterKeyStyle.Render(key+": ") + v.Render(val)
 		}
 
 		var filterContent string
 		switch activeTab {
 		case TabIssues:
 			f := issueFilters
-			filterContent = "  " +
+			filterContent = indent +
 				fmtFilter("state", displayAny(f.State)) + sep +
 				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
 				fmtFilter("label", displayAny(f.Label)) + sep +
@@ -318,47 +202,48 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				filterHintStyle.Render("   [f] to change filters")
 		case TabPRs:
 			f := prFilters
-			filterContent = "  " +
+			filterContent = indent +
 				fmtFilter("state", displayAny(f.State)) + sep +
 				fmtFilter("assignee", displayAny(f.Assignee)) + sep +
 				fmtFilter("label", displayAny(f.Label)) + sep +
 				fmtFilter("limit", fmt.Sprintf("%d", f.Limit)) +
 				filterHintStyle.Render("   [f] to change filters")
 		case TabDashboard:
-			countStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+			countStyle := lipgloss.NewStyle().Foreground(pal.Accent).Bold(true).Background(pal.BgBody)
 			countOrDash := func(n int) string {
 				if n == 0 {
 					return filterValStyle.Render("0")
 				}
 				return countStyle.Render(fmt.Sprintf("%d", n))
 			}
-			filterContent = "  " +
+			filterContent = indent +
 				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
-				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" open PRs") + sep +
-				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned")
+				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" my PRs") + sep +
+				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned issues") + sep +
+				countOrDash(counts.AssignedPRs) + filterKeyStyle.Render(" assigned PRs")
 		}
 		b.WriteString(filterContent + "\n")
 		// Separator between filter bar and content body, plus a blank line of breathing room.
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("237")).Render(strings.Repeat("─", width)) + "\n")
-		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody).Render(strings.Repeat("─", width)) + "\n")
+		b.WriteString(lipgloss.NewStyle().Background(pal.BgBody).Width(width).Render("") + "\n")
 	}
 
 	return b.String()
 }
 
 // metaSepLine renders the full-width separator line shared by all meta strips.
-func metaSepLine(width int) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(strings.Repeat("─", width))
+func metaSepLine(width int, pal Palette) string {
+	return lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody).Render(strings.Repeat("─", width))
 }
 
 // issueSepLine renders the separator for the issue meta strip.
 // It embeds a centred [e] expand / [e] collapse shortcut hint so users can
 // discover the expand feature without it taking up a footer button slot.
-func issueSepLine(width int, expanded bool) string {
-	dashSt := lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	bracketSt := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	keySt := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	labelSt := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+func issueSepLine(width int, expanded bool, pal Palette) string {
+	dashSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	bracketSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(pal.BgBody)
+	keySt := lipgloss.NewStyle().Foreground(pal.Meta).Bold(true).Background(pal.BgBody)
+	labelSt := lipgloss.NewStyle().Foreground(pal.Text).Background(pal.BgBody)
 
 	action := "expand"
 	if expanded {
@@ -385,15 +270,15 @@ func issueSepLine(width int, expanded bool) string {
 // append the badge (that would push the line past vp.Width and cause the
 // terminal to wrap it onto a new row). Instead we reconstruct the last line
 // as (vp.Width - badgeW) spaces + badge, keeping the total exactly vp.Width.
-func viewportWithScrollHint(vp viewport.Model) string {
+func viewportWithScrollHint(vp viewport.Model, pal Palette) string {
 	view := vp.View()
 	if vp.AtBottom() {
 		return view
 	}
 	pct := int(vp.ScrollPercent() * 100)
 	badge := lipgloss.NewStyle().
-		Background(lipgloss.Color("240")).
-		Foreground(lipgloss.Color("252")).
+		Background(pal.TextDim).
+		Foreground(pal.TextBold).
 		Padding(0, 1).
 		Render(fmt.Sprintf("↓ %d%%", pct))
 	badgeW := lipgloss.Width(badge)
@@ -407,7 +292,7 @@ func viewportWithScrollHint(vp viewport.Model) string {
 	if spaceW < 0 {
 		spaceW = 0
 	}
-	lines[idx] = strings.Repeat(" ", spaceW) + badge
+	lines[idx] = lipgloss.NewStyle().Background(pal.BgBody).Render(strings.Repeat(" ", spaceW)) + badge
 	return strings.Join(lines, "\n")
 }
 
@@ -426,16 +311,16 @@ func viewportWithScrollHint(vp viewport.Model) string {
 //	Line 5 — Author: …  ·  Created: …  (left)   remaining pills (right)
 //	Line 6 — blank gap
 //	Line 7 — separator
-func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
+func renderIssueMetaStrip(issue github.Issue, width int, expanded bool, pal Palette) string {
 	if width == 0 {
 		width = 80
 	}
-	bg := lipgloss.Color("") // transparent — matches the body background
-	s := lipgloss.NewStyle()
-	titleSt := s.Foreground(lipgloss.Color("208")).Bold(true)
-	numSt := s.Foreground(lipgloss.Color("69")).Bold(true)
-	authorSt := s.Foreground(lipgloss.Color("252"))
-	mutedSt := s.Foreground(lipgloss.Color("244"))
+	bg := pal.BgBody
+	s := lipgloss.NewStyle().Background(bg)
+	titleSt := s.Foreground(pal.Title).Bold(true)
+	numSt := s.Foreground(pal.Number).Bold(true)
+	authorSt := s.Foreground(pal.Text)
+	mutedSt := s.Foreground(pal.TextMuted)
 
 	// fill returns n background-colored spaces.
 	fill := func(n int) string {
@@ -453,11 +338,11 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 
 	stateLabel := func() string {
 		if strings.EqualFold(issue.State, "closed") {
-			return s.Foreground(lipgloss.Color("196")).Bold(true).Render("CLOSED")
+			return s.Foreground(pal.StatusClosed).Bold(true).Render("CLOSED")
 		}
-		return s.Foreground(lipgloss.Color("83")).Bold(true).Render("OPEN")
+		return s.Foreground(pal.StatusOpen).Bold(true).Render("OPEN")
 	}()
-	stateDot := s.Render(stateIndicator(issue.State, false))
+	stateDot := s.Render(stateIndicator(issue.State, false, pal))
 	stateStr := stateDot + s.Render("  ") + stateLabel + s.Render("  ")
 
 	numW := lipgloss.Width(numStr)
@@ -482,7 +367,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		assigneeStr = s.Render("  ") + mutedSt.Render("Assignee: ") + mutedSt.Render("unassigned")
 	}
 
-	dimDot := s.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	dimDot := s.Foreground(pal.TextFaint).Render("  ·  ")
 	typeVal := issue.IssueType
 	if typeVal == "" {
 		typeVal = "—"
@@ -497,7 +382,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		}
 		pills := make([]string, len(labels))
 		for i, l := range labels {
-			pills[i] = labelPill(bg, l.Name)
+			pills[i] = labelPill(bg, l.Name, pal)
 		}
 		return strings.Join(pills, "") + s.Render("  ")
 	}
@@ -526,10 +411,10 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 		}
 		overflow := len(issue.Labels) - len(shown)
 		for _, i := range shown {
-			collapsedPill += labelPill(bg, issue.Labels[i].Name)
+			collapsedPill += labelPill(bg, issue.Labels[i].Name, pal)
 		}
 		if overflow > 0 {
-			collapsedPill += s.Foreground(lipgloss.Color("252")).Render(fmt.Sprintf(" +%d", overflow))
+			collapsedPill += s.Foreground(pal.Text).Render(fmt.Sprintf(" +%d", overflow))
 		}
 		collapsedPill += s.Render("  ")
 	}
@@ -539,7 +424,7 @@ func renderIssueMetaStrip(issue github.Issue, width int, expanded bool) string {
 	row2 := assigneeStr + typeStr + fill(width-leftW-pillW) + collapsedPill
 
 	// ── Separator — always shows [e] expand / [e] collapse hint centred ─────
-	sepLine := issueSepLine(width, expanded)
+	sepLine := issueSepLine(width, expanded, pal)
 
 	if !expanded {
 		return spacer + "\n" + row1 + "\n" + thinGap + "\n" + row2 + "\n" + sepLine + "\n"
@@ -598,19 +483,19 @@ func prStatusPill(stripBg lipgloss.Color, bg lipgloss.Color, fg lipgloss.Color, 
 //	Line 3 — blank gap
 //	Line 4 — ⎇ head → base · by author (left)  ···  status + label pills (right)
 //	Line 5 — separator
-func renderPRMetaStrip(pr github.PullRequest, width int) string {
+func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 	if width == 0 {
 		width = 80
 	}
-	bg := lipgloss.Color("") // transparent — matches the body background
-	s := lipgloss.NewStyle()
-	titleSt := s.Foreground(lipgloss.Color("208")).Bold(true)
-	numSt := s.Foreground(lipgloss.Color("69")).Bold(true)
-	mutedSt := s.Foreground(lipgloss.Color("244"))
-	authorSt := s.Foreground(lipgloss.Color("252"))
-	branchSt := s.Foreground(lipgloss.Color("86"))
-	arrowSt := s.Foreground(lipgloss.Color("252")) // bright arrow
-	sepSt := s.Foreground(lipgloss.Color("238"))
+	bg := pal.BgBody
+	s := lipgloss.NewStyle().Background(bg)
+	titleSt := s.Foreground(pal.Title).Bold(true)
+	numSt := s.Foreground(pal.Number).Bold(true)
+	mutedSt := s.Foreground(pal.TextMuted)
+	authorSt := s.Foreground(pal.Text)
+	branchSt := s.Foreground(pal.Accent)
+	arrowSt := s.Foreground(pal.Text)
+	sepSt := s.Foreground(pal.TextFaint)
 	dot := sepSt.Render("  ·  ")
 
 	fill := func(n int) string {
@@ -629,16 +514,16 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	stateLabel := func() string {
 		switch {
 		case pr.IsDraft:
-			return s.Foreground(lipgloss.Color("214")).Bold(true).Render("DRAFT")
+			return s.Foreground(pal.StatusDraft).Bold(true).Render("DRAFT")
 		case strings.EqualFold(pr.State, "merged"):
-			return s.Foreground(lipgloss.Color("141")).Bold(true).Render("MERGED")
+			return s.Foreground(pal.StatusMerged).Bold(true).Render("MERGED")
 		case strings.EqualFold(pr.State, "closed"):
-			return s.Foreground(lipgloss.Color("196")).Bold(true).Render("CLOSED")
+			return s.Foreground(pal.StatusClosed).Bold(true).Render("CLOSED")
 		default:
-			return s.Foreground(lipgloss.Color("83")).Bold(true).Render("OPEN")
+			return s.Foreground(pal.StatusOpen).Bold(true).Render("OPEN")
 		}
 	}()
-	stateDot := s.Render(stateIndicator(pr.State, pr.IsDraft))
+	stateDot := s.Render(stateIndicator(pr.State, pr.IsDraft, pal))
 	stateStr := stateDot + s.Render("  ") + stateLabel + s.Render("  ")
 
 	numW := lipgloss.Width(numStr)
@@ -674,11 +559,11 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 
 	switch pr.ReviewDecision {
 	case "APPROVED":
-		rightChips = append(rightChips, prStatusPill(bg, "2", "0", "✓ approved"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelSuccess, pal.LabelSuccessFg, "✓ approved"))
 	case "CHANGES_REQUESTED":
-		rightChips = append(rightChips, prStatusPill(bg, "1", "15", "✗ changes"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelDanger, pal.LabelDangerFg, "✗ changes"))
 	case "REVIEW_REQUIRED":
-		rightChips = append(rightChips, prStatusPill(bg, "3", "0", "⟳ review"))
+		rightChips = append(rightChips, prStatusPill(bg, pal.LabelWarn, pal.LabelWarnFg, "⟳ review"))
 	}
 
 	if len(pr.StatusRollup) > 0 {
@@ -692,16 +577,16 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 		}
 		switch {
 		case failing:
-			rightChips = append(rightChips, prStatusPill(bg, "1", "15", "✗ failing"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelDanger, pal.LabelDangerFg, "✗ failing"))
 		case pending:
-			rightChips = append(rightChips, prStatusPill(bg, "3", "0", "… pending"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelWarn, pal.LabelWarnFg, "… pending"))
 		default:
-			rightChips = append(rightChips, prStatusPill(bg, "2", "0", "✓ passing"))
+			rightChips = append(rightChips, prStatusPill(bg, pal.LabelSuccess, pal.LabelSuccessFg, "✓ passing"))
 		}
 	}
 
 	for _, l := range pr.Labels {
-		rightChips = append(rightChips, labelPill(bg, l.Name))
+		rightChips = append(rightChips, labelPill(bg, l.Name, pal))
 	}
 
 	var rightStr string
@@ -714,7 +599,7 @@ func renderPRMetaStrip(pr github.PullRequest, width int) string {
 	row2 := leftStr + fill(width-leftW-rightW) + rightStr
 
 	// ── Line 5: separator ────────────────────────────────────────────────────
-	sepLine := metaSepLine(width)
+	sepLine := metaSepLine(width, pal)
 
 	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + sepLine + "\n"
 }
@@ -730,234 +615,83 @@ func formatDurationShort(d time.Duration) string {
 	return fmt.Sprintf("%dh", int(d.Hours()))
 }
 
-func printIssueDetail(issue github.Issue, maxBodyRows, termCols int) {
-	sep := strings.Repeat("─", termCols)
-	fmt.Printf("#%d %s\n", issue.Number, issue.Title)
-	fmt.Println(sep)
-	fmt.Printf("State:     %s\n", issue.State)
-	fmt.Printf("Author:    %s\n", issue.Author.Login)
-	fmt.Printf("Created:   %s\n", strings.TrimSuffix(strings.Split(issue.CreatedAt, "T")[0], "Z"))
-	fmt.Printf("Assignees: %s\n", joinUsers(issue.Assignees))
-	fmt.Printf("Labels:    %s\n", coloredLabels(issue.Labels))
-	fmt.Printf("URL:       %s\n", issue.URL)
-	fmt.Println(sep)
-	fmt.Println()
 
-	body := strings.TrimSpace(issue.Body)
-	if body == "" {
-		body = "No description provided."
-	}
-	fmt.Println(truncateLines(body, maxBodyRows, termCols))
-	fmt.Println()
-}
-
-func printIssuesTable(issues []github.Issue) {
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "NUMBER\tTITLE\tASSIGNEE\tLABELS")
-	fmt.Fprintln(writer, "------\t-----\t--------\t------")
-	for _, issue := range issues {
-		fmt.Fprintf(writer, "%d\t%s\t%s\t%s\n",
-			issue.Number,
-			truncate(cleanLine(issue.Title), 58),
-			truncate(joinUsers(issue.Assignees), 22),
-			truncate(joinLabels(issue.Labels), 34),
-		)
-	}
-	writer.Flush()
-}
-
-func printPRDetail(pr github.PullRequest, maxBodyRows, termCols int) {
-	sep := strings.Repeat("─", termCols)
-	fmt.Printf("#%d %s\n", pr.Number, pr.Title)
-	fmt.Println(sep)
-
-	stateColor := styleGreen
-	switch {
-	case pr.IsDraft:
-		stateColor = styleYellow
-	case pr.State == "merged":
-		stateColor = stylePurple
-	case pr.State == "closed":
-		stateColor = styleRed
-	}
-	stateStr := pr.State
-	if pr.IsDraft {
-		stateStr = "draft"
-	}
-
-	fmt.Printf("%-12s %s\n", "State:", stateColor.Render(stateStr))
-	fmt.Printf("%-12s %s\n", "Author:", pr.Author.Login)
-	fmt.Printf("%-12s %s\n", "Branch:", pr.HeadRefName)
-
-	createdDate := pr.CreatedAt
-	if len(pr.CreatedAt) >= 10 {
-		createdDate = pr.CreatedAt[:10]
-	}
-	fmt.Printf("%-12s %s\n", "Created:", createdDate)
-
-	assigneeStr := "—"
-	if len(pr.Assignees) > 0 {
-		logins := make([]string, len(pr.Assignees))
-		for i, a := range pr.Assignees {
-			logins[i] = a.Login
-		}
-		assigneeStr = strings.Join(logins, ", ")
-	}
-	fmt.Printf("%-12s %s\n", "Assignees:", assigneeStr)
-
-	reviewColor := styleYellow
-	switch pr.ReviewDecision {
-	case "APPROVED":
-		reviewColor = styleGreen
-	case "CHANGES_REQUESTED":
-		reviewColor = styleRed
-	}
-	reviewStr := pr.ReviewDecision
-	if reviewStr == "" {
-		reviewStr = "—"
-	}
-	fmt.Printf("%-12s %s\n", "Review:", reviewColor.Render(reviewStr))
-	fmt.Printf("%-12s %s\n", "Checks:", summarizeChecks(pr.StatusRollup))
-
-	fmt.Printf("%-12s %s\n", "Labels:", coloredLabels(pr.Labels))
-	fmt.Printf("%-12s %s\n", "URL:", pr.URL)
-	fmt.Println(sep)
-
-	if pr.Body != "" {
-		fmt.Println()
-		fmt.Println(truncateLines(strings.TrimSpace(pr.Body), maxBodyRows, termCols))
-	}
-	fmt.Println()
-}
-
-func stateIndicator(state string, isDraft bool) string {
+func stateIndicator(state string, isDraft bool, pal Palette) string {
 	switch {
 	case isDraft:
-		return styleYellow.Render("◐")
+		return lipgloss.NewStyle().Foreground(pal.StatusDraft).Render("◐")
 	case strings.EqualFold(state, "merged"):
-		return stylePurple.Render("✓")
+		return lipgloss.NewStyle().Foreground(pal.StatusMerged).Render("✓")
 	case strings.EqualFold(state, "closed"):
-		return styleRed.Render("✗")
+		return lipgloss.NewStyle().Foreground(pal.StatusClosed).Render("✗")
 	case strings.EqualFold(state, "open"):
-		return styleGreen.Render("●")
+		return lipgloss.NewStyle().Foreground(pal.StatusOpen).Render("●")
 	default:
-		return styleGray.Render("○")
+		return lipgloss.NewStyle().Foreground(pal.TextMuted).Render("○")
 	}
 }
 
-func summarizeChecks(checks []github.CheckRun) string {
+func summarizeChecks(checks []github.CheckRun, bg lipgloss.Color, pal Palette) string {
+	st := func(fg lipgloss.Color) lipgloss.Style {
+		return lipgloss.NewStyle().Foreground(fg).Background(bg)
+	}
 	if len(checks) == 0 {
-		return "—"
+		return st(pal.TextFaint).Render("—")
 	}
 	pending := false
 	for _, c := range checks {
 		if c.Conclusion == "FAILURE" || c.Conclusion == "ERROR" || c.Conclusion == "TIMED_OUT" {
-			return styleRed.Render("✗")
+			return st(pal.CheckFail).Render("✗")
 		}
 		if c.Status != "COMPLETED" {
 			pending = true
 		}
 	}
 	if pending {
-		return styleYellow.Render("…")
+		return st(pal.CheckPending).Render("…")
 	}
-	return styleGreen.Render("✓")
+	return st(pal.CheckPass).Render("✓")
 }
 
-// hintBar formats alternating key/description pairs into a styled hint line,
-// auto-truncating so it never exceeds the terminal width.
-func hintBar(pairs ...string) string {
-	_, cols := termSize()
-	const sep = "  ·  "
-	used := 1 // leading space
-	var parts []string
-	for i := 0; i+1 < len(pairs); i += 2 {
-		k, d := pairs[i], pairs[i+1]
-		w := 3 + len([]rune(k)) + 1 + len([]rune(d)) // "[k] d"
-		if len(parts) > 0 {
-			w += len(sep)
-		}
-		if cols > 0 && used+w > cols {
-			break
-		}
-		used += w
-		kFmt := styleGray.Render("[" + styleCyan.Render(k) + "]")
-		parts = append(parts, kFmt+" "+styleGray.Render(d))
-	}
-	return " " + strings.Join(parts, styleGray.Render(sep))
-}
-
-// hintSep returns a full-width dim horizontal rule for use above hint bars.
-func hintSep(rawMode bool) string {
-	_, cols := termSize()
-	line := styleGray.Render(strings.Repeat("─", cols))
-	if rawMode {
-		return line + "\033[K\r\n"
-	}
-	return line + "\n"
-}
-
-func colorState(s string) string {
-	switch s {
-	case "open":
-		return styleGreen.Render(s)
-	case "closed":
-		return styleRed.Render(s)
-	default:
-		return s
-	}
-}
-
-func colorVal(s string) string {
-	if s == "any" {
-		return styleGray.Render(s)
-	}
-	return styleYellow.Render(s)
-}
 
 // labelPillColors returns background and foreground terminal colors for a
 // label pill based on its name category.
-func labelPillColors(name string) (bg, fg lipgloss.Color) {
+func labelPillColors(name string, pal Palette) (bg, fg lipgloss.Color) {
 	low := strings.ToLower(name)
 	switch {
 	case strings.Contains(low, "priority:high"),
 		strings.Contains(low, "priority:critical"),
 		strings.Contains(low, "type:bug"),
 		low == "bug", low == "critical", low == "blocker":
-		return "1", "15" // red bg, white text
+		return pal.LabelDanger, pal.LabelDangerFg
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return "3", "0" // yellow bg, black text
+		return pal.LabelWarn, pal.LabelWarnFg
 	case strings.Contains(low, "priority:low"):
-		return "2", "0" // green bg, black text
+		return pal.LabelSuccess, pal.LabelSuccessFg
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
 		low == "enhancement", low == "feature":
-		return "6", "0" // cyan bg, black text
+		return pal.LabelFeature, pal.LabelFeatureFg
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return "5", "15" // purple bg, white text
+		return pal.LabelDocs, pal.LabelDocsFg
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return "8", "15" // dark gray bg, white text
+		return pal.LabelSubtle, pal.LabelSubtleFg
 	default:
-		return "208", "0" // orange bg, black text
+		return pal.LabelDefault, pal.LabelDefaultFg
 	}
 }
 
 // labelPill renders a label as a colored background chip.
 // stripBg is the background color of the containing row, used to color the
 // gap between pills so the strip stays uniformly dark.
-func labelPill(stripBg lipgloss.Color, name string) string {
-	bg, fg := labelPillColors(name)
-	chip := lipgloss.NewStyle().
-		Background(bg).
-		Foreground(fg).
-		Padding(0, 1).
-		Render(name)
-	// Wrap with a single-space gutter in strip color on each side.
+func labelPill(stripBg lipgloss.Color, name string, pal Palette) string {
+	bg, fg := labelPillColors(name, pal)
+	chip := lipgloss.NewStyle().Background(bg).Foreground(fg).Padding(0, 1).Render(name)
 	gutter := lipgloss.NewStyle().Background(stripBg).Render(" ")
 	return gutter + chip + gutter
 }
@@ -965,36 +699,34 @@ func labelPill(stripBg lipgloss.Color, name string) string {
 // labelStyle returns a lipgloss style for a label based on its name.
 // Labels are categorized by common prefixes (priority:, type:, effort:) or
 // well-known keywords like "bug", "enhancement", "feature".
-func labelStyle(name string) lipgloss.Style {
+func labelStyle(name string, pal Palette) lipgloss.Style {
 	low := strings.ToLower(name)
+	s := lipgloss.NewStyle()
 	switch {
 	case strings.Contains(low, "priority:high"),
 		strings.Contains(low, "priority:critical"),
 		strings.Contains(low, "type:bug"),
-		low == "bug",
-		low == "critical",
-		low == "blocker":
-		return styleRed
+		low == "bug", low == "critical", low == "blocker":
+		return s.Foreground(pal.LabelDanger)
 	case strings.Contains(low, "priority:medium"),
 		strings.Contains(low, "type:question"),
 		low == "question":
-		return styleYellow
+		return s.Foreground(pal.LabelWarn)
 	case strings.Contains(low, "priority:low"):
-		return styleGreen
+		return s.Foreground(pal.LabelSuccess)
 	case strings.Contains(low, "type:enhancement"),
 		strings.Contains(low, "type:feature"),
-		low == "enhancement",
-		low == "feature":
-		return styleCyan
+		low == "enhancement", low == "feature":
+		return s.Foreground(pal.LabelFeature)
 	case strings.Contains(low, "type:docs"),
 		strings.Contains(low, "documentation"),
 		low == "docs":
-		return stylePurple
+		return s.Foreground(pal.LabelDocs)
 	case strings.HasPrefix(low, "effort:"),
 		strings.HasPrefix(low, "size:"):
-		return styleGray
+		return s.Foreground(pal.LabelSubtle)
 	default:
-		return styleOrange
+		return s.Foreground(pal.LabelDefault)
 	}
 }
 
@@ -1018,93 +750,15 @@ func labelPriority(name string) int {
 	}
 }
 
-// dominantLabelStyle returns the lipgloss style of the highest-priority label
-// in the list, used for compact list views where a single color must represent
-// the row.
-func dominantLabelStyle(labels []github.Label) lipgloss.Style {
-	if len(labels) == 0 {
-		return styleGray
-	}
-	bestIdx, bestPrio := 0, 999
-	for i, l := range labels {
-		if p := labelPriority(l.Name); p < bestPrio {
-			bestPrio = p
-			bestIdx = i
-		}
-	}
-	return labelStyle(labels[bestIdx].Name)
-}
-
-func coloredLabels(labels []github.Label) string {
-	if len(labels) == 0 {
-		return styleGray.Render("—")
-	}
-	parts := make([]string, len(labels))
-	for i, l := range labels {
-		parts[i] = labelStyle(l.Name).Render(l.Name)
-	}
-	return strings.Join(parts, styleGray.Render(", "))
-}
-
-// coloredLabelsCompact joins labels into a single colored string suitable for
-// list views. The whole string is colored using the dominant label color.
-func coloredLabelsCompact(labels []github.Label, maxWidth int) string {
-	if len(labels) == 0 {
-		return styleGray.Render(truncate("—", maxWidth))
-	}
-	plain := joinLabels(labels)
-	return dominantLabelStyle(labels).Render(truncate(plain, maxWidth))
-}
 
 // errorBox wraps a message in a red bordered box with an error icon.
-func errorBox(msg string) string {
-	return errorBoxStyle.Render("✗ " + msg)
-}
-
-// warningBox wraps a message in a yellow bordered box with a warning icon.
-func warningBox(msg string) string {
-	return warningBoxStyle.Render("⚠ " + msg)
-}
-
-// successBox wraps a message in a green bordered box with a check icon.
-func successBox(msg string) string {
-	return successBoxStyle.Render("✓ " + msg)
-}
-
-// infoBox wraps a message in a cyan bordered box with an info icon.
-func infoBox(msg string) string {
-	return infoBoxStyle.Render("ℹ " + msg)
-}
-
-// renderStatusBar prints a single-line status bar at the bottom showing repo,
-// active tab, and an optional stats string.
-func renderStatusBar(state *AppState, stats string) string {
-	tabName := "Dashboard"
-	switch state.ActiveTab {
-	case TabIssues:
-		tabName = "Issues"
-	case TabPRs:
-		tabName = "Pull Requests"
-	}
-	repo := state.Repo
-	if repo == "" {
-		repo = "(no repo)"
-	}
-	left := statusBarAccent.Render(tabName)
-	mid := statusBarStyle.Render(repo)
-	right := ""
-	if stats != "" {
-		right = statusBarStyle.Render(stats)
-	}
-
-	_, cols := termSize()
-	content := left + mid + right
-	plain := tabName + "  " + repo + "  " + stats
-	pad := cols - len([]rune(plain)) - 4
-	if pad < 0 {
-		pad = 0
-	}
-	return content + statusBarStyle.Render(strings.Repeat(" ", pad))
+func errorBox(msg string, pal Palette) string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(pal.Danger).
+		Padding(0, 1).
+		Foreground(pal.Danger).
+		Render("✗ " + msg)
 }
 
 func joinUsers(users []github.User) string {
@@ -1135,29 +789,6 @@ func cleanLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func truncateLines(text string, maxVisualRows, termCols int) string {
-	if termCols <= 0 {
-		termCols = 80
-	}
-	lines := strings.Split(text, "\n")
-	usedRows := 0
-	for i, line := range lines {
-		runeLen := len([]rune(line))
-		lineRows := 1
-		if runeLen > termCols {
-			lineRows = (runeLen + termCols - 1) / termCols
-		}
-		if usedRows+lineRows > maxVisualRows {
-			if i == 0 {
-				return text
-			}
-			out := strings.TrimRight(strings.Join(lines[:i], "\n"), " \t")
-			return out + "\n" + styleGray.Render("… open in browser to read more")
-		}
-		usedRows += lineRows
-	}
-	return text
-}
 
 func truncate(value string, max int) string {
 	if max <= 0 {
@@ -1237,37 +868,114 @@ func timeAgo(ts string) string {
 	}
 }
 
-// rendererCache caches glamour TermRenderers keyed by width so NewTermRenderer
-// (which is expensive) is only called once per terminal width.
-var rendererCache sync.Map // map[int]*glamour.TermRenderer
+// rendererCache caches glamour TermRenderers keyed by (width, docBg).
+var rendererCache sync.Map // map[rendererKey]*glamour.TermRenderer
 
-// renderMarkdown renders a Markdown string to ANSI-styled terminal output
-// using glamour. width is the available content width for word wrapping.
+type rendererKey struct {
+	width int
+	bg    string
+}
+
+// renderMarkdown renders a Markdown string to ANSI-styled terminal output.
+// docBg is the hex background color of the containing area (e.g. "#F2ECD8" for
+// parchment). When non-empty, glamour is configured with a matching document
+// background so that ANSI reset codes emitted inside the rendered content reset
+// to docBg instead of the terminal default. Pass "" for dark/auto-detected themes.
 // Falls back to the raw string if glamour fails so the body is never blank.
-func renderMarkdown(body string, width int) string {
+func renderMarkdown(body string, width int, docBg string) string {
 	if body == "" {
 		return ""
 	}
+	key := rendererKey{width, docBg}
 	var r *glamour.TermRenderer
-	if cached, ok := rendererCache.Load(width); ok {
+	if cached, ok := rendererCache.Load(key); ok {
 		r = cached.(*glamour.TermRenderer)
 	} else {
+		var opt glamour.TermRendererOption
+		if docBg != "" {
+			// Light theme: copy the light style, set the document background to
+			// match the surrounding area so ANSI resets don't bleed through, and
+			// zero the document margin (glamour renders it with the *parent* block
+			// style = terminal default, causing dark left bars). The outer
+			// Padding(0,2).Background(BgBody) in the view functions provides
+			// equivalent indentation with the correct background.
+			cfg := glamourstyles.LightStyleConfig
+			cfg.Document.StylePrimitive.BackgroundColor = strPtr(docBg)
+			cfg.Document.Margin = nil
+			// Deep-copy the Chroma block and set its background to docBg so that
+			// code blocks render consistently on the parchment background after
+			// injectDocBg replaces every \x1b[0m with \x1b[0m+<parchment bg>.
+			// Without this, chroma tokens (which only carry fg codes) would
+			// inherit the injected parchment bg instead of the dark code-block bg.
+			if cfg.CodeBlock.Chroma != nil {
+				chromaCopy := *cfg.CodeBlock.Chroma
+				chromaCopy.Background.BackgroundColor = strPtr(docBg)
+				cfg.CodeBlock.Chroma = &chromaCopy
+			}
+			opt = glamour.WithStyles(cfg)
+		} else {
+			// Dark theme: always use the standard dark style, never auto-detect.
+			// Auto-detection (termenv.HasDarkBackground) can return false on some
+			// terminals, causing glamour to pick the light style and making the
+			// viewport body appear white on dark-palette themes.
+			opt = glamour.WithStandardStyle("dark")
+		}
 		var err error
-		r, err = glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(width),
-		)
+		r, err = glamour.NewTermRenderer(opt, glamour.WithWordWrap(width))
 		if err != nil {
 			return body
 		}
-		rendererCache.Store(width, r)
+		rendererCache.Store(key, r)
 	}
 	out, err := r.Render(body)
 	if err != nil {
 		return body
 	}
+	if docBg != "" {
+		// Trim blank lines that glamour emits from Document BlockPrefix/BlockSuffix
+		// ("\n" each). Those bare newlines render on the terminal default (black)
+		// regardless of per-line bg injection because they carry no ANSI codes.
+		// The outer Padding(0,2).Background(BgBody) wrapper provides spacing.
+		out = strings.TrimLeft(out, "\n")
+		out = strings.TrimRight(out, "\n")
+		out = injectDocBg(out, docBg)
+	}
 	return out
 }
+
+// injectDocBg ensures every line of s renders on docBg by:
+//  1. Replacing every ANSI reset with reset+bgCode so that plain-space padding
+//     emitted by lipgloss (e.g. table cell margins) inherits parchment after
+//     any reset rather than the terminal default.
+//  2. Prepending bgCode to EVERY line so that viewport's line-split model
+//     (SetContent splits on \n; View rejoins and pads independently) doesn't
+//     require ANSI state to carry across newlines.
+func injectDocBg(s, docBg string) string {
+	r, g, b := hexToRGB(docBg)
+	bgCode := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	// Step 1: inject after every reset so trailing padding spaces get parchment bg.
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+bgCode)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+bgCode)
+	// Step 2: prefix every line so each line is self-contained.
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = bgCode + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+// hexToRGB converts a CSS hex color string (e.g. "#F2ECD8" or "F2ECD8") to
+// R, G, B integer components in the range [0, 255].
+func hexToRGB(hex string) (r, g, b int) {
+	hex = strings.TrimPrefix(hex, "#")
+	val, err := strconv.ParseInt(hex, 16, 32)
+	if err != nil {
+		return 0, 0, 0
+	}
+	return int((val >> 16) & 0xFF), int((val >> 8) & 0xFF), int(val & 0xFF)
+}
+
+func strPtr(s string) *string { return &s }
 
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)

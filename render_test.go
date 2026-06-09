@@ -9,7 +9,8 @@ import (
 
 func TestRenderIssueContentCmd_RendersBodyToMessage(t *testing.T) {
 	issue := github.Issue{Body: "# Hello\n\nSome **bold** text."}
-	cmd := renderIssueContentCmd(issue, 80)
+	pal := resolvePalette("")
+	cmd := renderIssueContentCmd(issue, 80, pal)
 	if cmd == nil {
 		t.Fatal("expected non-nil tea.Cmd")
 	}
@@ -25,7 +26,8 @@ func TestRenderIssueContentCmd_RendersBodyToMessage(t *testing.T) {
 
 func TestRenderIssueContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 	issue := github.Issue{Body: ""}
-	cmd := renderIssueContentCmd(issue, 80)
+	pal := resolvePalette("")
+	cmd := renderIssueContentCmd(issue, 80, pal)
 	msg := cmd()
 	if _, ok := msg.(issueContentRenderedMsg); !ok {
 		t.Fatalf("expected issueContentRenderedMsg for empty body, got %T", msg)
@@ -34,7 +36,8 @@ func TestRenderIssueContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 
 func TestRenderPRContentCmd_RendersBodyToMessage(t *testing.T) {
 	pr := github.PullRequest{Body: "## Summary\n\nFixes the bug."}
-	cmd := renderPRContentCmd(pr, 80)
+	pal := resolvePalette("")
+	cmd := renderPRContentCmd(pr, 80, pal)
 	if cmd == nil {
 		t.Fatal("expected non-nil tea.Cmd")
 	}
@@ -50,7 +53,8 @@ func TestRenderPRContentCmd_RendersBodyToMessage(t *testing.T) {
 
 func TestRenderPRContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 	pr := github.PullRequest{Body: ""}
-	cmd := renderPRContentCmd(pr, 80)
+	pal := resolvePalette("")
+	cmd := renderPRContentCmd(pr, 80, pal)
 	msg := cmd()
 	if _, ok := msg.(prContentRenderedMsg); !ok {
 		t.Fatalf("expected prContentRenderedMsg for empty body, got %T", msg)
@@ -59,8 +63,8 @@ func TestRenderPRContentCmd_EmptyBody_StillReturnsMessage(t *testing.T) {
 
 func TestRenderMarkdown_RepeatedCallsSameWidth_Consistent(t *testing.T) {
 	body := "# Title\n\nParagraph with `code`."
-	first := renderMarkdown(body, 80)
-	second := renderMarkdown(body, 80)
+	first := renderMarkdown(body, 80, "")
+	second := renderMarkdown(body, 80, "")
 	if first != second {
 		t.Error("repeated renderMarkdown calls with same input should return identical output")
 	}
@@ -71,7 +75,7 @@ func TestRenderMarkdown_RepeatedCallsSameWidth_Consistent(t *testing.T) {
 
 func TestRenderMarkdown_BodyAppearsInOutput(t *testing.T) {
 	body := "Hello unique-string-xyz"
-	out := renderMarkdown(body, 80)
+	out := renderMarkdown(body, 80, "")
 	if !strings.Contains(out, "unique-string-xyz") {
 		t.Errorf("expected output to contain input text, got: %q", out)
 	}

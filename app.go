@@ -70,6 +70,35 @@ type autoRefreshTickMsg struct{}
 // timerTickMsg is sent every second to update the timer display
 type timerTickMsg struct{}
 
+// clearThemeToastMsg is sent after a short delay to dismiss the theme toast.
+type clearThemeToastMsg struct{}
+
+func clearThemeToastCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return clearThemeToastMsg{}
+	})
+}
+
+// themeDisplayName returns a human-readable label for a colour theme key.
+func themeDisplayName(key string) string {
+	switch key {
+	case ColorThemeDefault:
+		return "Default"
+	case ColorThemeTranspiled:
+		return "Transpiled"
+	case ColorThemeCobalt2:
+		return "Cobalt 2"
+	case ColorThemeImageScoop:
+		return "ImageScoop"
+	case ColorThemeParchment:
+		return "Parchment"
+	case ColorThemeLatte:
+		return "Latte"
+	default:
+		return key
+	}
+}
+
 // issuePrefetchedMsg carries a prefetched issue detail fetched in the
 // background while the user navigates the list. The gen field is compared
 // against IssuesModel.prefetchGen to discard stale results.
@@ -91,6 +120,7 @@ type dashboardData struct {
 	reviewRequests []github.PullRequest
 	myPRs          []github.PullRequest
 	assignedIssues []github.Issue
+	assignedPRs    []github.PullRequest
 }
 
 // ── Root model ────────────────────────────────────────────────────────────────
@@ -112,8 +142,9 @@ type AppModel struct {
 	height    int
 
 	// Config & repo
-	repo string
-	cfg  Config
+	repo    string
+	cfg     Config
+	palette Palette // derived from cfg.ColorTheme
 
 	// Sub-models (only one active at a time based on activeTab + screen)
 	issues    IssuesModel
@@ -157,15 +188,20 @@ type AppModel struct {
 	// currentUser is the GitHub login of the authenticated user, fetched once
 	// at startup. Used to distinguish Grab / Take / Drop on the issues list.
 	currentUser string
+
+	// themeToastMsg is set briefly when the user cycles themes with t.
+	// It is cleared after 2 seconds by a clearThemeToastMsg.
+	themeToastMsg string
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters, cache AppCache) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	pal := resolvePalette(cfg.ColorTheme)
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
 	theme := resolveTheme(cfg.UITheme)
-	issues := newIssuesModel(issueFilters)
+	issues := newIssuesModel(issueFilters, pal)
 	issues.uiTheme = theme
 
 	// Seed issues list from cache for instant startup display.
@@ -179,7 +215,7 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 		issues.loading = false
 	}
 
-	prs := newPRsModel(prFilters)
+	prs := newPRsModel(prFilters, pal)
 	prs.uiTheme = theme
 
 	// Seed PRs list from cache for instant startup display.
@@ -201,10 +237,11 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 		screen:          ScreenList,
 		repo:            repo,
 		cfg:             cfg,
+		palette:         pal,
 		spinner:         s,
 		issues:          issues,
 		prs:             prs,
-		dashboard:       newDashboardModel(cfg),
+		dashboard:       newDashboardModel(cfg, pal),
 		issueFilterVals: &IssueFilterVals{},
 		prFilterVals:    &PRFilterVals{},
 		configVals:      &ConfigVals{},
@@ -377,7 +414,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Config form takes priority ────────────────────────────────────────────
 	// Route all messages to the active config form exclusively.
+	// Escape / b / backspace dismisses without saving.
 	if m.configForm != nil {
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.configForm = nil
+			return m, nil
+		}
 		form, cmd := m.configForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.configForm = f
@@ -396,6 +438,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			theme := resolveTheme(newCfg.UITheme)
 			m.issues.uiTheme = theme
 			m.prs.uiTheme = theme
+			newPal := resolvePalette(newCfg.ColorTheme)
+			m.palette = newPal
+			m.issues.palette = newPal
+			m.issues.list.SetDelegate(issueDelegate{pal: newPal})
+			m.issues.spinner.Style = lipgloss.NewStyle().Foreground(newPal.Accent)
+			m.prs.palette = newPal
+			m.prs.list.SetDelegate(prDelegate{pal: newPal})
+			m.prs.spinner.Style = lipgloss.NewStyle().Foreground(newPal.Accent)
+			m.dashboard.palette = newPal
+			m.dashboard.spinner.Style = lipgloss.NewStyle().Foreground(newPal.Accent)
 			// Start or restart auto-refresh ticker based on new config
 			if newCfg.AutoRefreshEnabled {
 				m.lastRefreshTime = time.Now().Unix()
@@ -413,7 +465,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Filter form takes priority ────────────────────────────────────────────
 	// Route all messages to the active filter form exclusively.
+	// Escape / b / backspace dismisses without saving.
 	if m.filterForm != nil {
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.filterForm = nil
+			return m, nil
+		}
 		form, cmd := m.filterForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.filterForm = f
@@ -439,6 +496,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.currentUser = msg.login
 			m.issues.currentUser = msg.login
+			m.prs.currentUser = msg.login
 		}
 		return m, nil
 
@@ -462,11 +520,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fw := formWidth(m.width-2, theme)
 		if msg.forPRs {
 			InitPRFilterVals(m.prFilterVals, m.prs.filters, msg.assignees)
-			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels).
+			m.filterForm = BuildPRFilterForm(m.prFilterVals, msg.assignees, msg.labels, m.palette).
 				WithWidth(fw)
 		} else {
 			InitIssueFilterVals(m.issueFilterVals, m.issues.filters, msg.assignees)
-			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels).
+			m.filterForm = BuildIssueFilterForm(m.issueFilterVals, msg.assignees, msg.labels, m.palette).
 				WithWidth(fw)
 		}
 		return m, m.filterForm.Init()
@@ -535,7 +593,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showHelp {
 				m.helpVP.Width = m.width - 4
 				m.helpVP.Height = m.height - 5
-				m.helpVP.SetContent(buildHelpContent(m.width - 4))
+				m.helpVP.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+				m.helpVP.SetContent(buildHelpContent(m.width-4, m.palette))
 				m.helpVP.GotoTop()
 			}
 			return m, nil
@@ -553,8 +612,38 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Config) && !m.hasActiveForm():
 			// Open configuration form
 			InitConfigVals(m.configVals, m.cfg)
-			m.configForm = BuildConfigForm(m.configVals).WithWidth(formWidth(m.width-2, resolveTheme(m.cfg.UITheme)))
+			m.configForm = BuildConfigForm(m.configVals, m.palette).WithWidth(formWidth(m.width-2, resolveTheme(m.cfg.UITheme)))
 			return m, m.configForm.Init()
+		case key.Matches(msg, keys.ThemeCycle) && !m.hasActiveForm():
+			m.cfg.ColorTheme = nextColorTheme(m.cfg.ColorTheme)
+			pal := resolvePalette(m.cfg.ColorTheme)
+			m.palette = pal
+			m.issues.palette = pal
+			m.issues.list.SetDelegate(issueDelegate{pal: pal})
+			m.issues.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
+			m.prs.palette = pal
+			m.prs.list.SetDelegate(prDelegate{pal: pal})
+			m.prs.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
+			m.dashboard.palette = pal
+			m.dashboard.spinner.Style = lipgloss.NewStyle().Foreground(pal.Accent)
+			m.themeToastMsg = "Theme: " + themeDisplayName(m.cfg.ColorTheme)
+			_ = saveConfig(m.cfg)
+			// Re-render any open detail viewport so its content uses the new
+			// theme's ANSI codes. Without this, parchment bg codes baked into
+			// the content persist after switching to a dark theme (and vice versa).
+			var themeCmds []tea.Cmd
+			themeCmds = append(themeCmds, tea.ClearScreen, clearThemeToastCmd())
+			if m.issues.showDetail {
+				m.issues.detail.Style = lipgloss.NewStyle().Background(pal.BgBody)
+				m.issues.detail.SetContent(lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("Rendering…") + "\n")
+				themeCmds = append(themeCmds, renderIssueContentCmd(m.issues.detailIssue, m.width, pal))
+			}
+			if m.prs.showDetail {
+				m.prs.detail.Style = lipgloss.NewStyle().Background(pal.BgBody)
+				m.prs.detail.SetContent(lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("Rendering…") + "\n")
+				themeCmds = append(themeCmds, renderPRContentCmd(m.prs.detailPR, m.width, pal))
+			}
+			return m, tea.Batch(themeCmds...)
 		case key.Matches(msg, keys.Filters) && !m.hasActiveForm():
 			if m.activeTab == TabIssues && !m.issues.loading && !m.issues.showDetail {
 				m.filterLoading = true
@@ -620,6 +709,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cmds = append(cmds, fetchPRDetailCmd(msg.number), m.prs.spinner.Tick)
 		}
+
+	case clearThemeToastMsg:
+		m.themeToastMsg = ""
+		return m, nil
 
 	case spinner.TickMsg:
 		// Only keep the app-level spinner alive while fetching filter data.
@@ -716,34 +809,36 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // quitConfirmFooter renders the quit confirmation prompt.
 // y/Y confirms; any other key cancels.
-func quitConfirmFooter(width int, theme UITheme) string {
-	return RenderFooterBar(width, theme,
-		NewKeyButton("y", "confirm quit", ColorDanger),
-		NewKeyButton("any key", "cancel", ColorMeta),
+func quitConfirmFooter(width int, theme UITheme, pal Palette) string {
+	return RenderFooterBar(width, theme, pal,
+		NewKeyButton("y", "confirm quit", pal.Danger),
+		NewKeyButton("any key", "cancel", pal.Meta),
 	)
 }
 
 // footerPendingToast renders a "working…" indicator in the footer.
-func footerPendingToast(spinnerView string, msg string, width int, theme UITheme) string {
-	bgSt := lipgloss.NewStyle().Background(footerBg)
-	spinSt := lipgloss.NewStyle().Background(footerBg).Foreground(ColorAction)
-	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(lipgloss.Color("244"))
+func footerPendingToast(spinnerView string, msg string, width int, theme UITheme, pal Palette) string {
+	bg := themeBg(theme, pal)
+	bgSt := lipgloss.NewStyle().Background(bg)
+	spinSt := lipgloss.NewStyle().Background(bg).Foreground(pal.Action)
+	txtSt := lipgloss.NewStyle().Background(bg).Foreground(pal.TextMuted)
 	line := bgSt.Render("  ") + spinSt.Render(spinnerView) + " " + txtSt.Render(msg)
-	return CenterInFooterBar(line, width, theme)
+	return CenterInFooterBar(line, width, theme, pal)
 }
 
 // footerToast renders a success / error toast notification.
-func footerToast(msg string, isErr bool, width int, theme UITheme) string {
-	fg := ColorAction // green
+func footerToast(msg string, isErr bool, width int, theme UITheme, pal Palette) string {
+	fg := pal.Action // green
 	icon := "✓"
 	if isErr {
-		fg = ColorDanger // red
+		fg = pal.Danger // red
 		icon = "✗"
 	}
-	bgSt := lipgloss.NewStyle().Background(footerBg)
-	txtSt := lipgloss.NewStyle().Background(footerBg).Foreground(fg).Bold(true)
+	bg := themeBg(theme, pal)
+	bgSt := lipgloss.NewStyle().Background(bg)
+	txtSt := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(true)
 	line := bgSt.Render("  ") + txtSt.Render(icon+" "+msg)
-	return CenterInFooterBar(line, width, theme)
+	return CenterInFooterBar(line, width, theme, pal)
 }
 
 // detailActionFooter renders the context-specific footer shown in detail views.
@@ -752,29 +847,30 @@ func footerToast(msg string, isErr bool, width int, theme UITheme) string {
 // exactly constant.
 func detailActionFooter(m AppModel, width int) string {
 	theme := resolveTheme(m.cfg.UITheme)
+	pal := m.palette
 
 	// Toast / pending indicator — shown in place of key hints.
 	// Priority: error > success > pending (working…)
 	if m.activeTab == TabIssues && m.issues.showDetail {
 		if m.issues.actionErr != nil {
-			return footerToast(m.issues.actionErr.Error(), true, width, theme)
+			return footerToast(m.issues.actionErr.Error(), true, width, theme, pal)
 		}
 		if m.issues.actionMsg != "" {
-			return footerToast(m.issues.actionMsg, false, width, theme)
+			return footerToast(m.issues.actionMsg, false, width, theme, pal)
 		}
 		if m.issues.actionPending != "" {
-			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme)
+			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme, pal)
 		}
 	}
 	if m.activeTab == TabPRs && m.prs.showDetail {
 		if m.prs.actionErr != nil {
-			return footerToast(m.prs.actionErr.Error(), true, width, theme)
+			return footerToast(m.prs.actionErr.Error(), true, width, theme, pal)
 		}
 		if m.prs.actionMsg != "" {
-			return footerToast(m.prs.actionMsg, false, width, theme)
+			return footerToast(m.prs.actionMsg, false, width, theme, pal)
 		}
 		if m.prs.actionPending != "" {
-			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width, theme)
+			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width, theme, pal)
 		}
 	}
 
@@ -788,10 +884,10 @@ func detailActionFooter(m AppModel, width int) string {
 		if strings.EqualFold(m.issues.detailIssue.State, "closed") {
 			// Closed issue: only allow back, browser, help, and reopen.
 			btns = []KeyButton{
-				kb(keys.Back, "back", ColorMeta),
-				kb(keys.Browser, "browser", ColorMeta),
-				kb(keys.Help, "more actions", ColorMeta),
-				kb(keys.IssueClose, "reopen", ColorDanger),
+				kb(keys.Back, "back", pal.Meta),
+				kb(keys.Browser, "browser", pal.Meta),
+				kb(keys.Help, "more actions", pal.Meta),
+				kb(keys.IssueClose, "reopen", pal.Danger),
 			}
 		} else {
 			assignLabel := "assign"
@@ -799,12 +895,12 @@ func detailActionFooter(m AppModel, width int) string {
 				assignLabel = "unassign"
 			}
 			btns = []KeyButton{
-				kb(keys.Back, "back", ColorMeta),
-				kb(keys.IssueClose, "close", ColorDanger),
-				kb(keys.IssueAssign, assignLabel, ColorAction),
-				kb(keys.IssueDevelop, "develop", ColorAction),
-				kb(keys.Browser, "browser", ColorMeta),
-				kb(keys.Help, "more actions", ColorMeta),
+				kb(keys.Back, "back", pal.Meta),
+				kb(keys.IssueClose, "close", pal.Danger),
+				kb(keys.IssueAssign, assignLabel, pal.Action),
+				kb(keys.IssueDevelop, "develop", pal.Action),
+				kb(keys.Browser, "browser", pal.Meta),
+				kb(keys.Help, "more actions", pal.Meta),
 			}
 		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
@@ -813,33 +909,38 @@ func detailActionFooter(m AppModel, width int) string {
 		case strings.EqualFold(pr.State, "merged"):
 			// Merged PR: no further actions — can't reopen, checkout, or merge again.
 			btns = []KeyButton{
-				kb(keys.Back, "back", ColorMeta),
-				kb(keys.Browser, "browser", ColorMeta),
-				kb(keys.Help, "more actions", ColorMeta),
+				kb(keys.Back, "back", pal.Meta),
+				kb(keys.Browser, "browser", pal.Meta),
+				kb(keys.Help, "more actions", pal.Meta),
 			}
 		case strings.EqualFold(pr.State, "closed"):
 			// Closed (not merged) PR: only reopen is meaningful.
 			btns = []KeyButton{
-				kb(keys.Back, "back", ColorMeta),
-				kb(keys.Browser, "browser", ColorMeta),
-				kb(keys.Help, "more actions", ColorMeta),
-				kb(keys.PRClose, "reopen", ColorDanger),
+				kb(keys.Back, "back", pal.Meta),
+				kb(keys.Browser, "browser", pal.Meta),
+				kb(keys.Help, "more actions", pal.Meta),
+				kb(keys.PRClose, "reopen", pal.Danger),
 			}
 		default:
 			// Open or draft PR: full action set.
+			prAssignLabel := "assign"
+			if isMeAssigned(m.prs.detailPR.Assignees, m.currentUser) {
+				prAssignLabel = "unassign"
+			}
 			btns = []KeyButton{
-				kb(keys.Back, "back", ColorMeta),
-				kb(keys.PRClose, "close", ColorDanger),
-				kb(keys.PRCheckout, "checkout", ColorAction),
-				kb(keys.PRMerge, "merge", ColorAction),
-				kb(keys.PRReview, "reviewer", ColorAction),
-				kb(keys.Browser, "browser", ColorMeta),
-				kb(keys.Help, "more actions", ColorMeta),
+				kb(keys.Back, "back", pal.Meta),
+				kb(keys.PRClose, "close", pal.Danger),
+				kb(keys.IssueAssign, prAssignLabel, pal.Action),
+				kb(keys.PRCheckout, "checkout", pal.Action),
+				kb(keys.PRMerge, "merge", pal.Action),
+				kb(keys.PRReview, "reviewer", pal.Action),
+				kb(keys.Browser, "browser", pal.Meta),
+				kb(keys.Help, "more actions", pal.Meta),
 			}
 		}
 	}
 
-	return RenderFooterBar(width, theme, btns...)
+	return RenderFooterBar(width, theme, pal, btns...)
 }
 
 // isMeAssigned reports whether login appears in the assignees list.
@@ -857,72 +958,115 @@ func isMeAssigned(assignees []github.User, login string) bool {
 }
 
 func footerView(m AppModel, width int, theme UITheme) string {
+	pal := m.palette
 	kb := func(b key.Binding, desc string, c lipgloss.Color) KeyButton {
 		return NewKeyButton(b.Help().Key, desc, c)
+	}
+
+	// Theme-change toast — shown briefly after pressing t.
+	if m.themeToastMsg != "" {
+		return footerToast(m.themeToastMsg, false, width, theme, pal)
 	}
 
 	// List-level action feedback (e.g. assign from list) — show toast in place
 	// of the normal buttons so the user knows the action is in flight or done.
 	if m.activeTab == TabIssues && !m.issues.showDetail {
 		if m.issues.actionErr != nil {
-			return footerToast(m.issues.actionErr.Error(), true, width, theme)
+			return footerToast(m.issues.actionErr.Error(), true, width, theme, pal)
 		}
 		if m.issues.actionMsg != "" {
-			return footerToast(m.issues.actionMsg, false, width, theme)
+			return footerToast(m.issues.actionMsg, false, width, theme, pal)
 		}
 		if m.issues.actionPending != "" {
-			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme)
+			return footerPendingToast(m.issues.spinner.View(), m.issues.actionPending, width, theme, pal)
+		}
+	}
+	if m.activeTab == TabPRs && !m.prs.showDetail {
+		if m.prs.actionErr != nil {
+			return footerToast(m.prs.actionErr.Error(), true, width, theme, pal)
+		}
+		if m.prs.actionMsg != "" {
+			return footerToast(m.prs.actionMsg, false, width, theme, pal)
+		}
+		if m.prs.actionPending != "" {
+			return footerPendingToast(m.prs.spinner.View(), m.prs.actionPending, width, theme, pal)
 		}
 	}
 
 	switch m.activeTab {
 	case TabDashboard:
-		return RenderFooterBar(width, theme,
-			kb(keys.Up, "navigate", ColorAction),
-			kb(keys.Open, "open", ColorAction),
-			kb(keys.Tab, "switch view", ColorMeta),
-			kb(keys.Help, "shortcuts", ColorMeta),
+		return RenderFooterBar(width, theme, pal,
+			kb(keys.Up, "navigate", pal.Action),
+			kb(keys.Open, "open", pal.Action),
+			kb(keys.Tab, "switch view", pal.Meta),
+			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	case TabIssues:
+		// When an inline form is open, show a minimal cancel footer.
+		if m.issues.activeForm != nil {
+			return RenderFooterBar(width, theme, pal,
+				NewKeyButton("tab", "next field", pal.Meta),
+				NewKeyButton("shift+tab", "prev field", pal.Meta),
+				NewKeyButton("esc", "cancel", pal.Danger),
+			)
+		}
 		// Grab / Take / Drop label depends on the selected issue's assignees.
-		assignLabel, assignColor := "grab", ColorAction
+		assignLabel, assignColor := "grab", pal.Action
 		if item, ok := m.issues.list.SelectedItem().(issueListItem); ok {
 			switch {
 			case isMeAssigned(item.issue.Assignees, m.currentUser):
-				assignLabel, assignColor = "drop", ColorDanger
+				assignLabel, assignColor = "drop", pal.Danger
 			case len(item.issue.Assignees) > 0:
-				assignLabel, assignColor = "take", ColorMeta
+				assignLabel, assignColor = "take", pal.Meta
 			}
 		}
-		return RenderFooterBar(width, theme,
-			kb(keys.Open, "open", ColorAction),
-			kb(keys.Browser, "browser", ColorMeta),
-			kb(keys.New, "new issue", ColorAction),
+		return RenderFooterBar(width, theme, pal,
+			kb(keys.Open, "open", pal.Action),
+			kb(keys.Browser, "browser", pal.Meta),
+			kb(keys.New, "new issue", pal.Action),
 			NewKeyButton(keys.IssueAssign.Help().Key, assignLabel, assignColor),
-			kb(keys.Help, "shortcuts", ColorMeta),
+			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	case TabPRs:
-		return RenderFooterBar(width, theme,
-			kb(keys.Open, "open", ColorAction),
-			kb(keys.Browser, "browser", ColorMeta),
-			kb(keys.New, "new PR", ColorAction),
-			kb(keys.PRCheckout, "checkout", ColorAction),
-			kb(keys.Help, "shortcuts", ColorMeta),
+		// When an inline form is open, show a minimal cancel footer.
+		if m.prs.activeForm != nil {
+			return RenderFooterBar(width, theme, pal,
+				NewKeyButton("tab", "next field", pal.Meta),
+				NewKeyButton("shift+tab", "prev field", pal.Meta),
+				NewKeyButton("esc", "cancel", pal.Danger),
+			)
+		}
+		// Grab / Take / Drop label depends on the selected PR's assignees.
+		prAssignLabel, prAssignColor := "grab", pal.Action
+		if item, ok := m.prs.list.SelectedItem().(prListItem); ok {
+			switch {
+			case isMeAssigned(item.pr.Assignees, m.currentUser):
+				prAssignLabel, prAssignColor = "drop", pal.Danger
+			case len(item.pr.Assignees) > 0:
+				prAssignLabel, prAssignColor = "take", pal.Meta
+			}
+		}
+		return RenderFooterBar(width, theme, pal,
+			kb(keys.Open, "open", pal.Action),
+			kb(keys.Browser, "browser", pal.Meta),
+			kb(keys.New, "new PR", pal.Action),
+			NewKeyButton(keys.IssueAssign.Help().Key, prAssignLabel, prAssignColor),
+			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	default:
-		return RenderFooterBar(width, theme, kb(keys.Help, "shortcuts", ColorMeta))
+		return RenderFooterBar(width, theme, pal, kb(keys.Help, "shortcuts", pal.Meta))
 	}
 }
 
 // buildHelpContent returns the full scrollable help text showing every
 // keyboard shortcut in the application, organised by section.
 // contentW is the available visual width for line-length purposes.
-func buildHelpContent(contentW int) string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208"))
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+func buildHelpContent(contentW int, pal Palette) string {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(pal.Title)
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(pal.Accent)
+	keyStyle := lipgloss.NewStyle().Foreground(pal.Meta).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(pal.TextMuted)
+	dimStyle := lipgloss.NewStyle().Foreground(pal.TextFaint)
 
 	// keyColW reserves enough space for the widest badge "[shift+tab]" (11
 	// visible chars) plus a comfortable gap before the description.
@@ -959,6 +1103,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(line(keys.ShiftTab, "switch to previous tab") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Config, "open settings") + "\n")
+	buf.WriteString(line(keys.ThemeCycle, "cycle colour theme") + "\n")
 	buf.WriteString(line(keys.Refresh, "refresh current view") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Help, "open / close this screen") + "\n")
@@ -997,6 +1142,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(sec("Pull Requests — List"))
 	buf.WriteString(line(keys.New, "create new pull request") + "\n")
 	buf.WriteString(line(keys.Browser, "open selected PR in browser") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "grab (unassigned) / take (from someone) / drop (yourself)") + "\n")
 
 	// ── Pull request detail ───────────────────────────────────────────────
 	buf.WriteString(sec("Pull Requests — Detail"))
@@ -1004,6 +1150,7 @@ func buildHelpContent(contentW int) string {
 	buf.WriteString(line(keys.PRMerge, "merge pull request") + "\n")
 	buf.WriteString(line(keys.PRClose, "close / reopen pull request") + "\n")
 	buf.WriteString(line(keys.PRReview, "request a reviewer") + "\n")
+	buf.WriteString(line(keys.IssueAssign, "assign / unassign @me") + "\n")
 	buf.WriteString("\n")
 	buf.WriteString(line(keys.Browser, "open in browser") + "\n")
 	buf.WriteString(line(keys.CopyURL, "copy URL to clipboard") + "\n")
@@ -1018,16 +1165,23 @@ func buildHelpContent(contentW int) string {
 // helpOverlayView renders the full keyboard-shortcut reference inside a
 // scrollable viewport. ↑/↓ scroll; any other key dismisses.
 func helpOverlayView(m AppModel, innerW int) string {
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	pal := m.palette
+	dimStyle := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(pal.BgBody)
 
 	hint := "  " + dimStyle.Render("↑ / ↓  scroll    ·    any other key to close")
 
+	inner := m.helpVP.View() + "\n" + hint
+	if bg := string(pal.BgBody); bg != "" {
+		inner = injectDocBg(inner, bg)
+	}
+
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("208")).
+		BorderForeground(pal.Title).
+		Background(pal.BgBody).
 		Width(innerW).
 		Height(m.height - 2)
-	return appBorder.Render(m.helpVP.View() + "\n" + hint)
+	return appBorder.Render(inner)
 }
 
 func (m AppModel) View() string {
@@ -1043,14 +1197,20 @@ func (m AppModel) View() string {
 		return helpOverlayView(m, innerW)
 	}
 
+	pal := m.palette
+
 	// ── Config form overlay ───────────────────────────────────────────────────
 	// Show the configuration form when active.
 	if m.configForm != nil {
 		body := m.configForm.View()
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
 
 		appBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("208")).
+			BorderForeground(pal.Title).
+			Background(pal.BgBody).
 			Width(innerW)
 		return appBorder.Render(body)
 	}
@@ -1065,16 +1225,20 @@ func (m AppModel) View() string {
 		} else {
 			body = m.filterForm.View()
 		}
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
 
 		appBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("208")).
+			BorderForeground(pal.Title).
+			Background(pal.BgBody).
 			Width(innerW)
 		return appBorder.Render(body)
 	}
 
 	inDetail := inDetailMode(m)
-	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix())
+	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix(), pal)
 
 	var body string
 	switch m.activeTab {
@@ -1090,7 +1254,7 @@ func (m AppModel) View() string {
 	var footer string
 	switch {
 	case m.confirmingQuit:
-		footer = quitConfirmFooter(innerW, theme)
+		footer = quitConfirmFooter(innerW, theme, pal)
 	case inDetail:
 		footer = detailActionFooter(m, innerW)
 	default:
@@ -1100,19 +1264,33 @@ func (m AppModel) View() string {
 	headerLines := strings.Count(header, "\n")
 	bodyLines := strings.Count(body, "\n")
 	footerLines := strings.Count(footer, "\n") + 1
+
+	// Ensure body ends with \n so the first fill line isn't concatenated onto
+	// the last body line when building inner. Increment bodyLines so the fill
+	// calculation remains correct.
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		body += "\n"
+		bodyLines++
+	}
+
 	usedLines := headerLines + bodyLines + footerLines
 
 	remaining := innerH - usedLines
 	if remaining < 0 {
 		remaining = 0
 	}
-	fill := strings.Repeat("\n", remaining)
+	var fill string
+	if remaining > 0 {
+		blankLine := lipgloss.NewStyle().Background(pal.BgBody).Width(innerW).Render("")
+		fill = strings.Repeat(blankLine+"\n", remaining)
+	}
 
 	inner := header + body + fill + footer
 
 	appBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("208")).
+		BorderForeground(pal.Title).
+		Background(pal.BgBody).
 		Width(innerW)
 
 	return appBorder.Render(inner)

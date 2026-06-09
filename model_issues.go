@@ -39,9 +39,9 @@ type issueContentRenderedMsg struct {
 
 // renderIssueContentCmd renders issue detail content in a goroutine so the
 // heavy glamour call never blocks the BubbleTea Update loop.
-func renderIssueContentCmd(issue github.Issue, width int) tea.Cmd {
+func renderIssueContentCmd(issue github.Issue, width int, pal Palette) tea.Cmd {
 	return func() tea.Msg {
-		return issueContentRenderedMsg{content: renderIssueDetailContent(issue, width)}
+		return issueContentRenderedMsg{content: renderIssueDetailContent(issue, width, pal)}
 	}
 }
 
@@ -132,7 +132,7 @@ func (i issueListItem) Title() string {
 	return fmt.Sprintf("#%-5d %s", i.issue.Number, i.issue.Title)
 }
 func (i issueListItem) Description() string {
-	return fmt.Sprintf("%s  %s", joinUsers(i.issue.Assignees), coloredLabelsCompact(i.issue.Labels, 60))
+	return fmt.Sprintf("%s  %s", joinUsers(i.issue.Assignees), joinLabels(i.issue.Labels))
 }
 func (i issueListItem) FilterValue() string {
 	return fmt.Sprintf("%d %s", i.issue.Number, i.issue.Title)
@@ -145,10 +145,10 @@ func (i issueListItem) FilterValue() string {
 //	Line 1: [accent] ● #N   Title…(fill)
 //	Line 2:         Assignee  Labels…
 
-type issueDelegate struct{}
+type issueDelegate struct{ pal Palette }
 
-func (d issueDelegate) Height() int                             { return 2 }
-func (d issueDelegate) Spacing() int                            { return 1 }
+func (d issueDelegate) Height() int                             { return 3 }
+func (d issueDelegate) Spacing() int                            { return 0 }
 func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -162,32 +162,32 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 
 	// Base style — slightly lighter bg on the selected row.
 	var base lipgloss.Style
-	selectedBg := lipgloss.Color("235")
+	selectedBg := d.pal.BgSelected
 	if selected {
 		base = lipgloss.NewStyle().Background(selectedBg)
 	} else {
-		base = lipgloss.NewStyle()
+		base = lipgloss.NewStyle().Background(d.pal.BgBody)
 	}
 
 	// Left accent bar (2 chars wide either way so layout stays stable).
 	var accent string
 	if selected {
-		accent = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Background(selectedBg).Render("▌") +
+		accent = lipgloss.NewStyle().Foreground(d.pal.Accent).Background(selectedBg).Render("▌") +
 			base.Render(" ")
 	} else {
-		accent = "  "
+		accent = base.Render("  ")
 	}
 
 	// ⚑ colored by state: green = open, red = closed.
-	dotColor := lipgloss.Color("83")
+	dotColor := d.pal.StatusOpen
 	if !strings.EqualFold(issue.State, "open") {
-		dotColor = lipgloss.Color("196")
+		dotColor = d.pal.StatusClosed
 	}
 	dot := base.Foreground(dotColor).Bold(true).Render("⚑")
 
 	// Issue number — left-aligned in a 4-digit-wide field so columns stay
 	// stable as numbers grow: " #20  " → " #200 " → " #2000".
-	numStyle := base.Foreground(lipgloss.Color("69"))
+	numStyle := base.Foreground(d.pal.Number)
 	if selected {
 		numStyle = numStyle.Bold(true)
 	}
@@ -196,16 +196,16 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Timestamp — rendered first so we know the width before sizing the title.
 	var tsStr string
 	if age := timeAgo(issue.CreatedAt); age != "" {
-		tsStr = base.Foreground(lipgloss.Color("240")).Render(age)
+		tsStr = base.Foreground(d.pal.TextDim).Render(age)
 	}
 	tsW := lipgloss.Width(tsStr)
 
 	// Title fills the space between the left prefix and the timestamp.
 	// left prefix = accent(2) + dot(1) + numStr(6) + space(1) = 10
 	// right suffix = gap(2) + tsW + trailing(1)
-	titleStyle := base.Foreground(lipgloss.Color("252"))
+	titleStyle := base.Foreground(d.pal.Text)
 	if selected {
-		titleStyle = base.Foreground(lipgloss.Color("255")).Bold(true)
+		titleStyle = base.Foreground(d.pal.TextBold).Bold(true)
 	}
 	titleMaxW := width - 10 - 2 - tsW - 1
 	if titleMaxW < 20 {
@@ -230,9 +230,9 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Build the type badge first so we know its width before sizing labels.
 	var typeStr string
 	if issue.IssueType != "" {
-		typeStr = base.Foreground(lipgloss.Color("111")).Render(issue.IssueType)
+		typeStr = base.Foreground(d.pal.Number).Italic(true).Render(issue.IssueType)
 	} else {
-		typeStr = base.Foreground(lipgloss.Color("238")).Render("—")
+		typeStr = base.Foreground(d.pal.TextFaint).Italic(true).Render("—")
 	}
 	typeW := lipgloss.Width(typeStr)
 
@@ -254,7 +254,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// Reuse accent on line 2 so the bar spans both rows; fill the rest of the indent.
 	indent := accent + base.Render(strings.Repeat(" ", lineIndent-2))
 
-	assigneeStyle := base.Foreground(lipgloss.Color("244"))
+	assigneeStyle := base.Foreground(d.pal.TextMuted).Italic(true)
 	var assigneeText string
 	if len(issue.Assignees) > 0 {
 		assigneeText = "@" + joinUsers(issue.Assignees)
@@ -273,13 +273,13 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 			shown = issue.Labels[:maxLabels]
 			overflow = len(issue.Labels) - maxLabels
 		}
-		var bgKey string
+		bgKey := string(d.pal.BgBody)
 		if selected {
-			bgKey = "235"
+			bgKey = string(d.pal.BgSelected)
 		}
-		labelPart = issueRowLabels(shown, bgKey, labelMax)
+		labelPart = issueRowLabels(shown, bgKey, labelMax, d.pal)
 		if overflow > 0 {
-			labelPart += base.Foreground(lipgloss.Color("240")).Render(fmt.Sprintf(" +%d", overflow))
+			labelPart += base.Foreground(d.pal.TextDim).Render(fmt.Sprintf(" +%d", overflow))
 		}
 	}
 
@@ -294,19 +294,20 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	line2Fill := base.Render(strings.Repeat(" ", line2FillW))
 
-	dimSep := base.Foreground(lipgloss.Color("238")).Render("  ·  ")
+	dimSep := base.Foreground(d.pal.TextFaint).Render("  ·  ")
 	line2 := indent + assigneeStr
 	if labelPart != "" {
 		line2 += dimSep + labelPart
 	}
 	line2 += line2Fill + typeStr + base.Render(" ")
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
+	spacer := lipgloss.NewStyle().Background(d.pal.BgBody).Width(width).Render("")
+	fmt.Fprintf(w, "%s\n%s\n%s", line1, line2, spacer)
 }
 
 // issueRowLabels renders a short colored label string for a list row.
 // bgKey is "" for no background or the color key (e.g. "235") when the row
 // is selected — so each segment explicitly matches the row background.
-func issueRowLabels(labels []github.Label, bgKey string, maxW int) string {
+func issueRowLabels(labels []github.Label, bgKey string, maxW int, pal Palette) string {
 	if len(labels) == 0 {
 		return ""
 	}
@@ -316,17 +317,17 @@ func issueRowLabels(labels []github.Label, bgKey string, maxW int) string {
 		}
 		return lipgloss.NewStyle()
 	}
-	sep := makeBase().Foreground(lipgloss.Color("238")).Render(" · ")
+	sep := makeBase().Foreground(pal.TextFaint).Render(" · ")
 	sepW := lipgloss.Width(sep)
 
 	var parts []string
 	used := 0
 	for _, l := range labels {
-		ls := labelStyle(l.Name)
+		ls := labelStyle(l.Name, pal)
 		if bgKey != "" {
 			ls = ls.Background(lipgloss.Color(bgKey))
 		}
-		rendered := ls.Render(l.Name)
+		rendered := ls.Italic(true).Render(l.Name)
 		rw := lipgloss.Width(rendered)
 		extra := 0
 		if len(parts) > 0 {
@@ -380,6 +381,9 @@ type IssuesModel struct {
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
 
+	// palette mirrors Config.ColorTheme for list item and detail colours.
+	palette Palette
+
 	// currentUser is the authenticated GitHub login, used to distinguish
 	// Grab / Take / Drop when the user presses 'a' on the issue list.
 	currentUser string
@@ -393,16 +397,19 @@ type IssuesModel struct {
 	prefetchedDetails map[int]github.Issue
 }
 
-func newIssuesModel(filters github.Filters) IssuesModel {
+func newIssuesModel(filters github.Filters, pal Palette) IssuesModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	s.Style = lipgloss.NewStyle().Foreground(pal.Accent)
 
-	l := list.New([]list.Item{}, issueDelegate{}, 0, 0)
+	l := list.New([]list.Item{}, issueDelegate{pal: pal}, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	l.Styles.NoItems = l.Styles.NoItems.Background(pal.BgBody).Foreground(pal.TextDim)
+	l.Styles.FilterPrompt = l.Styles.FilterPrompt.Background(pal.BgBody).Foreground(pal.TextMuted)
+	l.Styles.FilterCursor = l.Styles.FilterCursor.Background(pal.BgBody).Foreground(pal.Accent)
 	// Disable the list's built-in quit keybindings (q and esc) so they don't
 	// call tea.Quit directly and bypass our confirmation prompt.
 	// Must use DisableQuitKeybindings() — not SetEnabled(false) — because the
@@ -422,6 +429,7 @@ func newIssuesModel(filters github.Filters) IssuesModel {
 		spinner:  s,
 		loading:  true,
 		filters:  filters,
+		palette:  pal,
 		formVals: &issueFormVals{},
 	}
 }
@@ -523,6 +531,12 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 	// Route all messages to the active form exclusively so huh can manage its
 	// own keyboard navigation. Return early to block all app shortcuts.
 	if m.activeForm != nil {
+		// Esc / b / backspace cancels the form without submitting.
+		if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, keys.Back) {
+			m.activeForm = nil
+			m.formVals.formType = issueFormNone
+			return m, nil
+		}
 		form, cmd := m.activeForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.activeForm = f
@@ -575,10 +589,11 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailIssue = msg.issue
-		m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-		m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme))
+		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
-		return m, renderIssueContentCmd(msg.issue, m.width)
+		return m, renderIssueContentCmd(msg.issue, m.width, m.palette)
 
 	case issueContentRenderedMsg:
 		m.detail.SetContent(msg.content)
@@ -640,7 +655,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
+			m.detail.Height = detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme)
 		}
 
 	case spinner.TickMsg:
@@ -666,7 +681,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				return m, nil
 			case key.Matches(msg, keys.IssueExpandMeta):
 				m.metaExpanded = !m.metaExpanded
-				m.detail.Height = m.height - headerHeightDetail - m.currentMetaHeight() - 2
+				m.detail.Height = detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme)
 				return m, nil
 			case key.Matches(msg, keys.Refresh):
 				m.loadingDetail = true
@@ -749,7 +764,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Add label").
 						Placeholder("label name").
 						Value(&m.formVals.labelVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssueDevelop):
 				// Developing a branch is not allowed on a closed issue.
@@ -766,7 +781,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Title("Branch name").
 						Description(fmt.Sprintf("Default: %s", defaultBranch)).
 						Value(&m.formVals.branchVal),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.IssuePR):
 				// Creating a PR is not allowed on a closed issue.
@@ -852,7 +867,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 						Placeholder("Describe the issue (optional)").
 						CharLimit(4000).
 						Value(&m.formVals.newBody),
-				)).WithTheme(huh.ThemeCatppuccin()).WithWidth(formWidth(m.width, m.uiTheme))
+				)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 				return m, m.activeForm.Init()
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
@@ -866,11 +881,12 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.issue.Number]; ok {
 					m.detailIssue = prefetched
-					m.detail = viewport.New(m.width-4, m.height-headerHeightDetail-m.currentMetaHeight()-2)
-					m.detail.SetContent(styleGray.Render("Rendering…") + "\n")
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme))
+					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
+					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true
 					delete(m.prefetchedDetails, item.issue.Number)
-					cmds = append(cmds, renderIssueContentCmd(prefetched, m.width))
+					cmds = append(cmds, renderIssueContentCmd(prefetched, m.width, m.palette))
 				} else {
 					m.loadingDetail = true
 					cmds = append(cmds, fetchIssueDetailCmd(item.issue.Number))
@@ -903,7 +919,11 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 func (m IssuesModel) View() string {
 	// When a form is active, render it — replacing list/detail content.
 	if m.activeForm != nil {
-		return m.activeForm.View()
+		body := m.activeForm.View()
+		if bg := string(m.palette.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+		return body
 	}
 
 	var b strings.Builder
@@ -918,22 +938,25 @@ func (m IssuesModel) View() string {
 				return 0
 			}())
 		}
-		b.WriteString(fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg))
-		return b.String()
+		line := fmt.Sprintf("\n  %s %s\n", m.spinner.View(), msg)
+		if bg := string(m.palette.BgBody); bg != "" {
+			line = injectDocBg(line, bg)
+		}
+		return line
 	}
 
 	if m.err != nil {
-		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err)))
+		b.WriteString(errorBox(fmt.Sprintf("Error: %v\n\nPress r to retry.", m.err), m.palette))
 		return b.String()
 	}
 
 	if m.showDetail {
-		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded))
-		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr))
+		b.WriteString(renderIssueMetaStrip(m.detailIssue, m.width-4, m.metaExpanded, m.palette))
+		b.WriteString(renderIssueDetailView(m.detailIssue, m.detail, m.actionMsg, m.actionErr, m.palette))
 		return b.String()
 	}
 
-	b.WriteString(lipgloss.NewStyle().Margin(0, 2).Render(m.list.View()))
+	b.WriteString(lipgloss.NewStyle().Padding(0, 2).Background(m.palette.BgBody).Render(m.list.View()))
 	return b.String()
 }
 
@@ -949,16 +972,24 @@ func (m IssuesModel) currentMetaHeight() int {
 }
 
 // renderIssueDetailContent builds scrollable body-only content for the viewport.
-func renderIssueDetailContent(issue github.Issue, width int) string {
+func renderIssueDetailContent(issue github.Issue, width int, pal Palette) string {
 	if issue.Body == "" {
-		return styleGray.Render("No description.") + "\n"
+		return lipgloss.NewStyle().Foreground(pal.TextDim).Background(pal.BgBody).Render("No description.") + "\n"
 	}
-	return renderMarkdown(issue.Body, width-4)
+	return renderMarkdown(issue.Body, width-4, string(pal.BgBody))
 }
 
 // renderIssueDetailView renders the scrollable viewport only.
 // Action feedback (toast) is shown in the footer bar by AppModel so it never
 // changes the body height.
-func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error) string {
-	return lipgloss.NewStyle().Margin(0, 2).Render(viewportWithScrollHint(vp)) + "\n"
+func renderIssueDetailView(_ github.Issue, vp viewport.Model, _ string, _ error, pal Palette) string {
+	view := lipgloss.NewStyle().Padding(0, 2).Background(pal.BgBody).Render(viewportWithScrollHint(vp, pal))
+	// The blank separator line between the viewport and footer must be
+	// explicitly parchment-coloured; a bare \n after a lipgloss reset would
+	// render on the terminal default (black) for light themes.
+	spacer := lipgloss.NewStyle().Background(pal.BgBody).Width(vp.Width + 4).Render("")
+	// view does not end with \n; adding \n here puts the spacer on its own
+	// line and prevents it from merging with the last viewport line (which
+	// would create a double-width line that causes terminal wrapping).
+	return view + "\n" + spacer + "\n"
 }

@@ -3,8 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-
-	"hubcap/internal/github"
 )
 
 func TestDeriveBranchName(t *testing.T) {
@@ -34,28 +32,6 @@ func TestDeriveBranchNameMaxLength(t *testing.T) {
 	}
 }
 
-func TestSummarizeChecks(t *testing.T) {
-	tests := []struct {
-		name   string
-		checks []github.CheckRun
-		want   string
-	}{
-		{"empty", []github.CheckRun{}, "—"},
-		{"passing", []github.CheckRun{{Status: "COMPLETED", Conclusion: "SUCCESS"}}, colorGreen + "✓" + colorReset},
-		{"failing", []github.CheckRun{{Status: "COMPLETED", Conclusion: "FAILURE"}}, colorRed + "✗" + colorReset},
-		{"pending", []github.CheckRun{{Status: "IN_PROGRESS", Conclusion: ""}}, colorYellow + "…" + colorReset},
-		{"mixed fail", []github.CheckRun{
-			{Status: "COMPLETED", Conclusion: "SUCCESS"},
-			{Status: "COMPLETED", Conclusion: "FAILURE"},
-		}, colorRed + "✗" + colorReset},
-	}
-	for _, tc := range tests {
-		got := summarizeChecks(tc.checks)
-		if got != tc.want {
-			t.Errorf("%s: summarizeChecks() = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {
