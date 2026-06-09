@@ -109,6 +109,7 @@ const (
 	issueFormLabel                // "l" — add a label to the open issue
 	issueFormBranch               // "d" — create a development branch
 	issueFormNew                  // "n" — create a new issue
+	issueFormAssign               // "a" — assign to a specific user
 )
 
 // issueFormVals is heap-allocated so huh's Value() pointers remain valid
@@ -120,6 +121,22 @@ type issueFormVals struct {
 	branchDefault string
 	newTitle      string
 	newBody       string
+	assigneeVal   string // selected login, or "" to clear all assignees
+}
+
+// assigneeDataFetchedMsg carries the collaborator list fetched before showing
+// the assignee select form.
+type assigneeDataFetchedMsg struct {
+	assignees []string
+	err       error
+}
+
+// fetchAssigneeDataCmd fetches the repo's collaborator list asynchronously.
+func fetchAssigneeDataCmd() tea.Cmd {
+	return func() tea.Msg {
+		assignees, err := github.FetchAssignees()
+		return assigneeDataFetchedMsg{assignees: assignees, err: err}
+	}
 }
 
 // ── IssueListItem ─────────────────────────────────────────────────────────────
@@ -373,10 +390,11 @@ type IssuesModel struct {
 	actionMsg     string
 	actionErr     error
 
-	// Inline form (label, branch, new-issue). activeForm is nil when closed.
+	// Inline form (label, branch, new-issue, assign). activeForm is nil when closed.
 	// formVals is heap-allocated so its address is stable across model copies.
-	activeForm *huh.Form
-	formVals   *issueFormVals
+	activeForm          *huh.Form
+	formVals            *issueFormVals
+	loadingAssigneeForm bool // true while fetching collaborators for assignee select
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
@@ -517,6 +535,56 @@ func (m IssuesModel) handleFormComplete() (IssuesModel, tea.Cmd) {
 				return issuesFetchedMsg{issues: issues, err: err}
 			},
 		)
+
+	case issueFormAssign:
+		login := m.formVals.assigneeVal
+		issue := m.detailIssue
+		// Determine the target issue: detail view has a loaded issue; list view
+		// uses the currently selected item.
+		if issue.Number == 0 {
+			if item, ok := m.list.SelectedItem().(issueListItem); ok {
+				issue = item.issue
+			}
+		}
+		if issue.Number == 0 {
+			return m, nil
+		}
+		if login == "" {
+			// Clear all assignees.
+			assignees := make([]string, len(issue.Assignees))
+			for i, u := range issue.Assignees {
+				assignees[i] = u.Login
+			}
+			m.actionPending = "Clearing assignees…"
+			m.actionMsg = ""
+			m.actionErr = nil
+			num := issue.Number
+			return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+				if err := github.ClearIssueAssignees(num, assignees); err != nil {
+					return issueActionErrMsg{err: err}
+				}
+				return issueActionDoneMsg{
+					message:       "Assignees cleared.",
+					number:        num,
+					silentRefresh: true,
+				}
+			})
+		}
+		m.actionPending = fmt.Sprintf("Assigning to @%s…", login)
+		m.actionMsg = ""
+		m.actionErr = nil
+		num := issue.Number
+		inDetail := m.showDetail
+		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			if err := github.AssignIssue(num, login); err != nil {
+				return issueActionErrMsg{err: err}
+			}
+			return issueActionDoneMsg{
+				message:       fmt.Sprintf("Assigned to @%s.", login),
+				number:        num,
+				silentRefresh: !inDetail,
+			}
+		})
 	}
 
 	return m, nil
@@ -658,16 +726,46 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			m.detail.Height = detailViewportHeight(m.height, m.currentMetaHeight(), m.uiTheme)
 		}
 
+	case assigneeDataFetchedMsg:
+		m.loadingAssigneeForm = false
+		if msg.err != nil || len(msg.assignees) == 0 {
+			// Fallback: plain text input if fetch failed or repo has no collaborators.
+			m.formVals.assigneeVal = ""
+			m.formVals.formType = issueFormAssign
+			m.activeForm = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Assign to").
+					Placeholder("GitHub username").
+					Value(&m.formVals.assigneeVal),
+			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+			return m, m.activeForm.Init()
+		}
+		// Build options: "(clear)" first, then each collaborator.
+		opts := make([]huh.Option[string], 0, len(msg.assignees)+1)
+		opts = append(opts, huh.NewOption("(clear / unassign)", ""))
+		for _, a := range msg.assignees {
+			opts = append(opts, huh.NewOption(a, a))
+		}
+		m.formVals.assigneeVal = msg.assignees[0]
+		m.formVals.formType = issueFormAssign
+		m.activeForm = huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Assign to").
+				Options(opts...).
+				Value(&m.formVals.assigneeVal),
+		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+		return m, m.activeForm.Init()
+
 	case spinner.TickMsg:
 		// Keep spinning while loading or while a background action is in flight.
-		if m.loading || m.loadingDetail || m.actionPending != "" {
+		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingAssigneeForm {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 
 	case tea.KeyMsg:
-		if m.loading || m.loadingDetail {
+		if m.loading || m.loadingDetail || m.loadingAssigneeForm {
 			break
 		}
 
@@ -730,31 +828,14 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 					return issueActionDoneMsg{message: done, number: issue.Number}
 				})
 			case key.Matches(msg, keys.IssueAssign):
-				issue := m.detailIssue
-				// Assign/unassign is not allowed on a closed issue.
-				if strings.EqualFold(issue.State, "closed") {
+				// Assign is not allowed on a closed issue.
+				if strings.EqualFold(m.detailIssue.State, "closed") {
 					return m, nil
 				}
-				if len(issue.Assignees) > 0 {
-					m.actionPending = "Unassigning from @me…"
-					m.actionMsg = ""
-					m.actionErr = nil
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.UnassignIssueSelf(issue.Number); err != nil {
-							return issueActionErrMsg{err: err}
-						}
-						return issueActionDoneMsg{message: "Unassigned from @me.", number: issue.Number}
-					})
-				}
-				m.actionPending = "Assigning to @me…"
+				m.loadingAssigneeForm = true
 				m.actionMsg = ""
 				m.actionErr = nil
-				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-					if err := github.AssignIssueSelf(issue.Number); err != nil {
-						return issueActionErrMsg{err: err}
-					}
-					return issueActionDoneMsg{message: "Assigned to @me.", number: issue.Number}
-				})
+				return m, tea.Batch(m.spinner.Tick, fetchAssigneeDataCmd())
 			case key.Matches(msg, keys.IssueLabel):
 				// Add label — embedded input form.
 				m.formVals.labelVal = ""
@@ -822,36 +903,13 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 				}
 			case key.Matches(msg, keys.IssueAssign):
 				if item, ok := m.list.SelectedItem().(issueListItem); ok {
-					issue := item.issue
-					if isMeAssigned(issue.Assignees, m.currentUser) {
-						// Drop — remove @me, leave any other assignees.
-						m.actionPending = "Dropping…"
-						m.actionMsg = ""
-						m.actionErr = nil
-						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-							if err := github.UnassignIssueSelf(issue.Number); err != nil {
-								return issueActionErrMsg{err: err}
-							}
-							return issueActionDoneMsg{message: "Dropped.", silentRefresh: true}
-						})
+					if strings.EqualFold(item.issue.State, "closed") {
+						return m, nil
 					}
-					// Grab (unassigned) or Take (assigned to someone else).
-					verb := "Grabbing…"
-					done := "Grabbed."
-					if len(issue.Assignees) > 0 {
-						verb = "Taking…"
-						done = "Taken."
-					}
-					m.actionPending = verb
+					m.loadingAssigneeForm = true
 					m.actionMsg = ""
 					m.actionErr = nil
-					doneMsg := done
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.AssignIssueSelf(issue.Number); err != nil {
-							return issueActionErrMsg{err: err}
-						}
-						return issueActionDoneMsg{message: doneMsg, silentRefresh: true}
-					})
+					return m, tea.Batch(m.spinner.Tick, fetchAssigneeDataCmd())
 				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""

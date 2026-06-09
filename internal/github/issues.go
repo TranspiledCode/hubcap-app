@@ -212,6 +212,28 @@ func UnassignIssueSelf(number int) error {
 	return err
 }
 
+// AssignIssue assigns a specific user to an issue.
+func AssignIssue(number int, login string) error {
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-assignee", login)
+	return err
+}
+
+// UnassignIssue removes a specific user from an issue's assignees.
+func UnassignIssue(number int, login string) error {
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--remove-assignee", login)
+	return err
+}
+
+// ClearIssueAssignees removes all assignees from an issue.
+func ClearIssueAssignees(number int, assignees []string) error {
+	for _, login := range assignees {
+		if _, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--remove-assignee", login); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func AddIssueLabel(number int, label string) error {
 	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
 	return err
