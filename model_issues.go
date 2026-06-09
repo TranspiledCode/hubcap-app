@@ -771,17 +771,13 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			return m, m.activeForm.Init()
 		}
 
-		// Build multi-select options, pre-checking any current assignees.
+		// Build multi-select options. Pre-selection is driven by the initial
+		// value of assigneeVals (set above) — do NOT use Selected(true) here
+		// or huh will scroll the cursor to the last checked item instead of
+		// starting at the top of the list.
 		opts := make([]huh.Option[string], len(msg.assignees))
 		for i, a := range msg.assignees {
-			opt := huh.NewOption(a, a)
-			for _, cur := range currentAssignees {
-				if cur == a {
-					opt = opt.Selected(true)
-					break
-				}
-			}
-			opts[i] = opt
+			opts[i] = huh.NewOption(a, a)
 		}
 		m.activeForm = huh.NewForm(huh.NewGroup(
 			huh.NewMultiSelect[string]().
