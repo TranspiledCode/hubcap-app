@@ -915,16 +915,25 @@ func renderMarkdown(body string, width int, docBg string) string {
 	return out
 }
 
-// injectDocBg replaces every ANSI reset sequence in s with a reset followed by
-// an explicit 24-bit background set to docBg. This ensures that plain-space
-// padding emitted by lipgloss (e.g. table cell margins) inherits the intended
-// background instead of the terminal default after a reset.
+// injectDocBg ensures every line of s renders on docBg by:
+//  1. Replacing every ANSI reset with reset+bgCode so that plain-space padding
+//     emitted by lipgloss (e.g. table cell margins) inherits parchment after
+//     any reset rather than the terminal default.
+//  2. Prepending bgCode to EVERY line so that viewport's line-split model
+//     (SetContent splits on \n; View rejoins and pads independently) doesn't
+//     require ANSI state to carry across newlines.
 func injectDocBg(s, docBg string) string {
 	r, g, b := hexToRGB(docBg)
 	bgCode := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	// Step 1: inject after every reset so trailing padding spaces get parchment bg.
 	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+bgCode)
 	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+bgCode)
-	return bgCode + s
+	// Step 2: prefix every line so each line is self-contained.
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = bgCode + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // hexToRGB converts a CSS hex color string (e.g. "#F2ECD8" or "F2ECD8") to
