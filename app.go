@@ -904,6 +904,9 @@ func detailActionFooter(m AppModel, width int) string {
 			}
 		}
 	case m.activeTab == TabPRs && m.prs.showDetail:
+		if m.prs.loadingPRAssigneeForm {
+			return footerToast("Loading collaborators…", false, width, theme, pal)
+		}
 		pr := m.prs.detailPR
 		switch {
 		case strings.EqualFold(pr.State, "merged"):
@@ -923,14 +926,10 @@ func detailActionFooter(m AppModel, width int) string {
 			}
 		default:
 			// Open or draft PR: full action set.
-			prAssignLabel := "assign"
-			if isMeAssigned(m.prs.detailPR.Assignees, m.currentUser) {
-				prAssignLabel = "unassign"
-			}
 			btns = []KeyButton{
 				kb(keys.Back, "back", pal.Meta),
 				kb(keys.PRClose, "close", pal.Danger),
-				kb(keys.IssueAssign, prAssignLabel, pal.Action),
+				kb(keys.IssueAssign, "assign", pal.Action),
 				kb(keys.PRCheckout, "checkout", pal.Action),
 				kb(keys.PRMerge, "merge", pal.Action),
 				kb(keys.PRReview, "reviewer", pal.Action),
@@ -1029,21 +1028,14 @@ func footerView(m AppModel, width int, theme UITheme) string {
 				NewKeyButton("esc", "cancel", pal.Danger),
 			)
 		}
-		// Grab / Take / Drop label depends on the selected PR's assignees.
-		prAssignLabel, prAssignColor := "grab", pal.Action
-		if item, ok := m.prs.list.SelectedItem().(prListItem); ok {
-			switch {
-			case isMeAssigned(item.pr.Assignees, m.currentUser):
-				prAssignLabel, prAssignColor = "drop", pal.Danger
-			case len(item.pr.Assignees) > 0:
-				prAssignLabel, prAssignColor = "take", pal.Meta
-			}
+		if m.prs.loadingPRAssigneeForm {
+			return footerToast("Loading collaborators…", false, width, theme, pal)
 		}
 		return RenderFooterBar(width, theme, pal,
 			kb(keys.Open, "open", pal.Action),
 			kb(keys.Browser, "browser", pal.Meta),
 			kb(keys.New, "new PR", pal.Action),
-			NewKeyButton(keys.IssueAssign.Help().Key, prAssignLabel, prAssignColor),
+			kb(keys.IssueAssign, "assign", pal.Action),
 			kb(keys.Help, "shortcuts", pal.Meta),
 		)
 	default:

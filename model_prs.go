@@ -124,6 +124,7 @@ const (
 	prFormMerge             // "m" — choose merge strategy
 	prFormNew               // "n" — create a new PR
 	prFormReview            // "v" — request a reviewer
+	prFormAssign            // "a" — assign to a specific user
 )
 
 // prFormVals is heap-allocated so huh's Value() pointers remain valid across
@@ -137,6 +138,21 @@ type prFormVals struct {
 	newDraft          bool
 	reviewerVals      []string // selected reviewer logins (multi-select)
 	originalReviewers []string // reviewers when the form was opened (for diffing)
+	assigneeVals      []string // selected assignee logins (multi-select)
+	originalAssignees []string // assignees when the form was opened (for diffing)
+}
+
+// prAssigneeDataFetchedMsg carries the collaborator list for the PR assignee form.
+type prAssigneeDataFetchedMsg struct {
+	assignees []string
+	err       error
+}
+
+func fetchPRAssigneeDataCmd() tea.Cmd {
+	return func() tea.Msg {
+		assignees, err := github.FetchAssignees()
+		return prAssigneeDataFetchedMsg{assignees: assignees, err: err}
+	}
 }
 
 // ── PRListItem ────────────────────────────────────────────────────────────────
@@ -389,7 +405,8 @@ type PRsModel struct {
 	// formVals is heap-allocated for stable pointers across model copies.
 	activeForm          *huh.Form
 	formVals            *prFormVals
-	loadingReviewerForm bool // true while fetching collaborators for reviewer select
+	loadingReviewerForm  bool // true while fetching collaborators for reviewer select
+	loadingPRAssigneeForm bool // true while fetching collaborators for assignee select
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
@@ -552,6 +569,62 @@ func (m PRsModel) handleFormComplete() (PRsModel, tea.Cmd) {
 				return prActionErrMsg{err: err}
 			}
 			return prActionDoneMsg{message: done, number: num}
+		})
+
+	case prFormAssign:
+		pr := m.detailPR
+		if pr.Number == 0 {
+			if item, ok := m.list.SelectedItem().(prListItem); ok {
+				pr = item.pr
+			}
+		}
+		if pr.Number == 0 {
+			return m, nil
+		}
+
+		newSet := make(map[string]bool, len(m.formVals.assigneeVals))
+		for _, l := range m.formVals.assigneeVals {
+			newSet[l] = true
+		}
+		oldSet := make(map[string]bool, len(m.formVals.originalAssignees))
+		for _, l := range m.formVals.originalAssignees {
+			oldSet[l] = true
+		}
+		var add, remove []string
+		for l := range newSet {
+			if !oldSet[l] {
+				add = append(add, l)
+			}
+		}
+		for l := range oldSet {
+			if !newSet[l] {
+				remove = append(remove, l)
+			}
+		}
+		if len(add) == 0 && len(remove) == 0 {
+			return m, nil
+		}
+
+		var done string
+		switch {
+		case len(add) > 0 && len(remove) > 0:
+			done = fmt.Sprintf("Assignees updated (+%d / -%d).", len(add), len(remove))
+		case len(add) > 0:
+			done = fmt.Sprintf("Assigned @%s.", strings.Join(add, ", @"))
+		default:
+			done = fmt.Sprintf("Unassigned @%s.", strings.Join(remove, ", @"))
+		}
+
+		m.actionPending = "Updating assignees…"
+		m.actionMsg = ""
+		m.actionErr = nil
+		num := pr.Number
+		inDetail := m.showDetail
+		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			if err := github.UpdatePRAssignees(num, add, remove); err != nil {
+				return prActionErrMsg{err: err}
+			}
+			return prActionDoneMsg{message: done, number: num, silentRefresh: !inDetail}
 		})
 	}
 
@@ -718,6 +791,49 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
+	case prAssigneeDataFetchedMsg:
+		m.loadingPRAssigneeForm = false
+
+		// Pre-populate with the PR's current assignees.
+		var currentAssignees []string
+		if m.showDetail {
+			for _, u := range m.detailPR.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		} else if item, ok := m.list.SelectedItem().(prListItem); ok {
+			for _, u := range item.pr.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		}
+		m.formVals.originalAssignees = currentAssignees
+		m.formVals.assigneeVals = append([]string(nil), currentAssignees...)
+		m.formVals.formType = prFormAssign
+
+		if msg.err != nil || len(msg.assignees) == 0 {
+			m.formVals.assigneeVals = nil
+			m.activeForm = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Assign to").
+					Placeholder("GitHub username").
+					Value(&m.formVals.newBase), // reuse newBase as scratch space
+			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+			return m, m.activeForm.Init()
+		}
+
+		// Build multi-select options — no Selected(true) so cursor starts at top.
+		opts := make([]huh.Option[string], len(msg.assignees))
+		for i, a := range msg.assignees {
+			opts[i] = huh.NewOption(a, a)
+		}
+		m.activeForm = huh.NewForm(huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Assignees").
+				Description("Space to toggle, enter to confirm, esc to cancel").
+				Options(opts...).
+				Value(&m.formVals.assigneeVals),
+		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+		return m, m.activeForm.Init()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width - 2
 		m.height = msg.Height - 2
@@ -729,14 +845,14 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Keep spinning while loading or while a background action is in flight.
-		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingReviewerForm {
+		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingReviewerForm || m.loadingPRAssigneeForm {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 
 	case tea.KeyMsg:
-		if m.loading || m.loadingDetail || m.loadingReviewerForm {
+		if m.loading || m.loadingDetail || m.loadingReviewerForm || m.loadingPRAssigneeForm {
 			break
 		}
 
@@ -823,31 +939,13 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				m.loadingReviewerForm = true
 				return m, tea.Batch(fetchReviewerDataCmd(), m.spinner.Tick)
 			case key.Matches(msg, keys.IssueAssign):
-				// Assign/unassign @me — not allowed on merged or closed PRs.
-				pr := m.detailPR
-				if strings.EqualFold(pr.State, "merged") || strings.EqualFold(pr.State, "closed") {
+				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
 					return m, nil
 				}
-				if isMeAssigned(pr.Assignees, m.currentUser) {
-					m.actionPending = "Unassigning from @me…"
-					m.actionMsg = ""
-					m.actionErr = nil
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.UnassignPRSelf(pr.Number); err != nil {
-							return prActionErrMsg{err: err}
-						}
-						return prActionDoneMsg{message: "Unassigned from @me.", number: pr.Number}
-					})
-				}
-				m.actionPending = "Assigning to @me…"
+				m.loadingPRAssigneeForm = true
 				m.actionMsg = ""
 				m.actionErr = nil
-				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-					if err := github.AssignPRSelf(pr.Number); err != nil {
-						return prActionErrMsg{err: err}
-					}
-					return prActionDoneMsg{message: "Assigned to @me.", number: pr.Number}
-				})
+				return m, tea.Batch(m.spinner.Tick, fetchPRAssigneeDataCmd())
 			case key.Matches(msg, keys.PRMerge):
 				// Merge — not allowed on already merged or closed PRs.
 				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
@@ -892,36 +990,13 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				}
 			case key.Matches(msg, keys.IssueAssign):
 				if item, ok := m.list.SelectedItem().(prListItem); ok {
-					pr := item.pr
-					if isMeAssigned(pr.Assignees, m.currentUser) {
-						// Drop — remove @me, leave any other assignees.
-						m.actionPending = "Dropping…"
-						m.actionMsg = ""
-						m.actionErr = nil
-						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-							if err := github.UnassignPRSelf(pr.Number); err != nil {
-								return prActionErrMsg{err: err}
-							}
-							return prActionDoneMsg{message: "Dropped.", silentRefresh: true}
-						})
+					if strings.EqualFold(item.pr.State, "merged") || strings.EqualFold(item.pr.State, "closed") {
+						return m, nil
 					}
-					// Grab (unassigned) or Take (assigned to someone else).
-					verb := "Grabbing…"
-					done := "Grabbed."
-					if len(pr.Assignees) > 0 {
-						verb = "Taking…"
-						done = "Taken."
-					}
-					m.actionPending = verb
+					m.loadingPRAssigneeForm = true
 					m.actionMsg = ""
 					m.actionErr = nil
-					doneMsg := done
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.AssignPRSelf(pr.Number); err != nil {
-							return prActionErrMsg{err: err}
-						}
-						return prActionDoneMsg{message: doneMsg, silentRefresh: true}
-					})
+					return m, tea.Batch(m.spinner.Tick, fetchPRAssigneeDataCmd())
 				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
