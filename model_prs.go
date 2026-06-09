@@ -129,13 +129,14 @@ const (
 // prFormVals is heap-allocated so huh's Value() pointers remain valid across
 // BubbleTea value-receiver model copies.
 type prFormVals struct {
-	formType    prFormType
-	mergeType   string
-	newTitle    string
-	newBody     string
-	newBase     string
-	newDraft    bool
-	reviewerVal string
+	formType          prFormType
+	mergeType         string
+	newTitle          string
+	newBody           string
+	newBase           string
+	newDraft          bool
+	reviewerVals      []string // selected reviewer logins (multi-select)
+	originalReviewers []string // reviewers when the form was opened (for diffing)
 }
 
 // ── PRListItem ────────────────────────────────────────────────────────────────
@@ -506,22 +507,51 @@ func (m PRsModel) handleFormComplete() (PRsModel, tea.Cmd) {
 		)
 
 	case prFormReview:
-		reviewer := strings.TrimSpace(m.formVals.reviewerVal)
-		if reviewer == "" {
+		pr := m.detailPR
+
+		// Diff: compute reviewers to add and remove.
+		newSet := make(map[string]bool, len(m.formVals.reviewerVals))
+		for _, l := range m.formVals.reviewerVals {
+			newSet[l] = true
+		}
+		oldSet := make(map[string]bool, len(m.formVals.originalReviewers))
+		for _, l := range m.formVals.originalReviewers {
+			oldSet[l] = true
+		}
+		var add, remove []string
+		for l := range newSet {
+			if !oldSet[l] {
+				add = append(add, l)
+			}
+		}
+		for l := range oldSet {
+			if !newSet[l] {
+				remove = append(remove, l)
+			}
+		}
+		if len(add) == 0 && len(remove) == 0 {
 			return m, nil
 		}
-		pr := m.detailPR
-		m.actionPending = fmt.Sprintf("Requesting review from @%s…", reviewer)
+
+		var done string
+		switch {
+		case len(add) > 0 && len(remove) > 0:
+			done = fmt.Sprintf("Reviewers updated (+%d / -%d).", len(add), len(remove))
+		case len(add) > 0:
+			done = fmt.Sprintf("Review requested from @%s.", strings.Join(add, ", @"))
+		default:
+			done = fmt.Sprintf("Removed reviewer @%s.", strings.Join(remove, ", @"))
+		}
+
+		m.actionPending = "Updating reviewers…"
 		m.actionMsg = ""
 		m.actionErr = nil
+		num := pr.Number
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			if err := github.RequestReview(pr.Number, reviewer); err != nil {
+			if err := github.UpdatePRReviewers(num, add, remove); err != nil {
 				return prActionErrMsg{err: err}
 			}
-			return prActionDoneMsg{
-				message: fmt.Sprintf("Review requested from @%s.", reviewer),
-				number:  pr.Number,
-			}
+			return prActionDoneMsg{message: done, number: num}
 		})
 	}
 
@@ -650,29 +680,41 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	case reviewerDataFetchedMsg:
 		m.loadingReviewerForm = false
+
+		// Pre-populate with the PR's current requested reviewers.
+		var currentReviewers []string
+		for _, u := range m.detailPR.RequestedReviewers {
+			currentReviewers = append(currentReviewers, u.Login)
+		}
+		m.formVals.originalReviewers = currentReviewers
+		m.formVals.reviewerVals = append([]string(nil), currentReviewers...)
+		m.formVals.formType = prFormReview
+
 		if msg.err != nil || len(msg.reviewers) == 0 {
-			// Fallback: show a plain text input if fetch failed or repo has no collaborators.
-			m.formVals.reviewerVal = ""
-			m.formVals.formType = prFormReview
+			// Fallback: plain text input if fetch failed or repo has no collaborators.
+			m.formVals.reviewerVals = nil
 			m.activeForm = huh.NewForm(huh.NewGroup(
 				huh.NewInput().
 					Title("Request reviewer").
 					Placeholder("GitHub username").
-					Value(&m.formVals.reviewerVal),
+					Value(&m.formVals.newTitle), // reuse newTitle as scratch space
 			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 			return m, m.activeForm.Init()
 		}
+
+		// Build multi-select options. Pre-selection is driven by the initial
+		// value of reviewerVals — do NOT use Selected(true) or huh will scroll
+		// the cursor to the last checked item instead of starting at the top.
 		opts := make([]huh.Option[string], len(msg.reviewers))
 		for i, r := range msg.reviewers {
 			opts[i] = huh.NewOption(r, r)
 		}
-		m.formVals.reviewerVal = msg.reviewers[0]
-		m.formVals.formType = prFormReview
 		m.activeForm = huh.NewForm(huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Request reviewer").
+			huh.NewMultiSelect[string]().
+				Title("Reviewers").
+				Description("Space to toggle, enter to confirm, esc to cancel").
 				Options(opts...).
-				Value(&m.formVals.reviewerVal),
+				Value(&m.formVals.reviewerVals),
 		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
