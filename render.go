@@ -222,10 +222,9 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				return countStyle.Render(fmt.Sprintf("%d", n))
 			}
 			filterContent = indent +
-				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
 				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" my PRs") + sep +
-				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned issues") + sep +
-				countOrDash(counts.AssignedPRs) + filterKeyStyle.Render(" assigned PRs")
+				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned") + sep +
+				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" to review")
 		}
 		b.WriteString(filterContent + "\n")
 		// Separator between filter bar and content body, plus a blank line of breathing room.
