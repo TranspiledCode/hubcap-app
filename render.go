@@ -17,7 +17,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
 const (
 	// headerHeightFull is the line count of headerView when the filter bar is shown.
 	// title(1) + ▄-spacer(1) + tabs(1) + ▄-spacer(1) + filter(1) + separator(1) + blank(1) = 7
@@ -643,7 +642,6 @@ func formatDurationShort(d time.Duration) string {
 	return fmt.Sprintf("%dh", int(d.Hours()))
 }
 
-
 func stateIndicator(state string, isDraft bool, pal Palette) string {
 	switch {
 	case isDraft:
@@ -680,7 +678,6 @@ func summarizeChecks(checks []github.CheckRun, bg lipgloss.Color, pal Palette) s
 	}
 	return st(pal.CheckPass).Render("✓")
 }
-
 
 // labelPillColors returns background and foreground terminal colors for a
 // label pill based on its name category.
@@ -778,7 +775,6 @@ func labelPriority(name string) int {
 	}
 }
 
-
 // errorBox wraps a message in a red bordered box with an error icon.
 func errorBox(msg string, pal Palette) string {
 	return lipgloss.NewStyle().
@@ -816,7 +812,6 @@ func cleanLine(value string) string {
 	value = strings.ReplaceAll(value, "\t", " ")
 	return strings.Join(strings.Fields(value), " ")
 }
-
 
 func truncate(value string, max int) string {
 	if max <= 0 {

@@ -32,7 +32,6 @@ func TestDeriveBranchNameMaxLength(t *testing.T) {
 	}
 }
 
-
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		value string
