@@ -235,13 +235,13 @@ var paletteTranspiled = Palette{
 	CheckFail:    lipgloss.Color("#F34D2C"),
 	CheckPending: lipgloss.Color("#E7C61E"), // yellow — pending
 
-	LabelDanger:  lipgloss.Color("#FF0088"),  // hot pink — Transpiled Danger
-	LabelWarn:    lipgloss.Color("#FFC600"),  // yellow — Transpiled CheckPending
-	LabelSuccess: lipgloss.Color("#3AD900"),  // neon green — Transpiled Action
-	LabelFeature: lipgloss.Color("#2AFFDF"),  // mint — Transpiled Accent
-	LabelDocs:    lipgloss.Color("#C792EA"),  // soft violet — distinct docs colour
-	LabelSubtle:  lipgloss.Color("#546E7A"),  // blue-grey — dim effort/size
-	LabelDefault: lipgloss.Color("#FF9D00"),  // orange — Transpiled Meta
+	LabelDanger:  lipgloss.Color("#FF0088"), // hot pink — Transpiled Danger
+	LabelWarn:    lipgloss.Color("#FFC600"), // yellow — Transpiled CheckPending
+	LabelSuccess: lipgloss.Color("#3AD900"), // neon green — Transpiled Action
+	LabelFeature: lipgloss.Color("#2AFFDF"), // mint — Transpiled Accent
+	LabelDocs:    lipgloss.Color("#C792EA"), // soft violet — distinct docs colour
+	LabelSubtle:  lipgloss.Color("#546E7A"), // blue-grey — dim effort/size
+	LabelDefault: lipgloss.Color("#FF9D00"), // orange — Transpiled Meta
 
 	LabelDangerFg:  lipgloss.Color("0"),
 	LabelWarnFg:    lipgloss.Color("0"),
@@ -405,7 +405,7 @@ var paletteLatte = Palette{
 	LabelDefault: lipgloss.Color("#6C6F85"), // Subtext0 — fallback
 
 	LabelDangerFg:  lipgloss.Color("15"),
-	LabelWarnFg:    lipgloss.Color("0"),  // dark text on bright yellow
+	LabelWarnFg:    lipgloss.Color("0"), // dark text on bright yellow
 	LabelSuccessFg: lipgloss.Color("15"),
 	LabelFeatureFg: lipgloss.Color("15"),
 	LabelDocsFg:    lipgloss.Color("15"),

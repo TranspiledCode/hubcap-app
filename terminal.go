@@ -168,4 +168,3 @@ func emptyTabAction(reader *bufio.Reader, state *AppState, switchTarget TabID) s
 	}
 	return ""
 }
-
