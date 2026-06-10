@@ -19,23 +19,21 @@ import (
 // dashRow is one entry in the flat navigable list rendered on screen.
 type dashRow struct {
 	isHeader  bool
-	sectionID int  // 0=reviewRequests, 1=myPRs, 2=assignedIssues (see sec* constants)
-	itemIdx   int  // index within section (-1 for headers)
+	sectionID int  // 0=myPRs, 1=assigned, 2=reviewRequests (see sec* constants)
+	itemIdx   int  // index within section slice (-1 for headers)
 	isIssue   bool // true = Issue row, false = PullRequest row
 }
 
 const (
-	secReviewRequests = 0
-	secMyPRs          = 1
-	secAssigned       = 2
-	secAssignedPRs    = 3
+	secMyPRs          = 0 // PRs I opened
+	secAssigned       = 1 // issues + PRs assigned to me (mixed)
+	secReviewRequests = 2 // PRs where I'm a requested reviewer
 )
 
-var sectionNames = [4]string{
-	"REVIEW REQUESTS",
+var sectionNames = [3]string{
 	"MY OPEN PRs",
 	"ASSIGNED TO ME",
-	"ASSIGNED PRs",
+	"PRs TO REVIEW",
 }
 
 // ── DashboardModel ────────────────────────────────────────────────────────────
@@ -87,28 +85,28 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 			}
 			switch i {
 			case 0:
-				data.reviewRequests = result.([]github.PullRequest)
-			case 1:
 				data.myPRs = result.([]github.PullRequest)
-			case 2:
+			case 1:
 				data.assignedIssues = result.([]github.Issue)
-			case 3:
+			case 2:
 				data.assignedPRs = result.([]github.PullRequest)
+			case 3:
+				data.reviewRequests = result.([]github.PullRequest)
 			}
 		}
 
 		wg.Add(4)
 		go fetch(0, func() (interface{}, error) {
-			return github.FetchPRs(github.PRFilters{Search: "review-requested:@me", State: "open", Limit: 20})
-		})
-		go fetch(1, func() (interface{}, error) {
 			return github.FetchPRs(github.PRFilters{Author: "@me", State: "open", Limit: 20})
 		})
-		go fetch(2, func() (interface{}, error) {
+		go fetch(1, func() (interface{}, error) {
 			return github.FetchIssues(github.Filters{Assignee: "@me", State: "open", Limit: 20})
 		})
-		go fetch(3, func() (interface{}, error) {
+		go fetch(2, func() (interface{}, error) {
 			return github.FetchPRs(github.PRFilters{Assignee: "@me", State: "open", Limit: 20})
+		})
+		go fetch(3, func() (interface{}, error) {
+			return github.FetchPRs(github.PRFilters{Search: "review-requested:@me", State: "open", Limit: 20})
 		})
 		wg.Wait()
 
@@ -123,25 +121,35 @@ func (m DashboardModel) fetchCmd() tea.Cmd {
 
 func buildDashRows(data dashboardData) []dashRow {
 	var rows []dashRow
-	sections := []struct {
-		id    int
-		count int
-		issue bool
-	}{
-		{secReviewRequests, len(data.reviewRequests), false},
-		{secMyPRs, len(data.myPRs), false},
-		{secAssigned, len(data.assignedIssues), true},
-		{secAssignedPRs, len(data.assignedPRs), false},
-	}
-	for _, sec := range sections {
-		if sec.count == 0 {
-			continue
-		}
-		rows = append(rows, dashRow{isHeader: true, sectionID: sec.id, itemIdx: -1})
-		for i := 0; i < sec.count; i++ {
-			rows = append(rows, dashRow{isHeader: false, sectionID: sec.id, itemIdx: i, isIssue: sec.issue})
+
+	// MY OPEN PRs
+	if len(data.myPRs) > 0 {
+		rows = append(rows, dashRow{isHeader: true, sectionID: secMyPRs, itemIdx: -1})
+		for i := range data.myPRs {
+			rows = append(rows, dashRow{sectionID: secMyPRs, itemIdx: i, isIssue: false})
 		}
 	}
+
+	// ASSIGNED TO ME — issues first, then PRs, both under secAssigned.
+	// isIssue distinguishes the two when looking up items.
+	if len(data.assignedIssues)+len(data.assignedPRs) > 0 {
+		rows = append(rows, dashRow{isHeader: true, sectionID: secAssigned, itemIdx: -1})
+		for i := range data.assignedIssues {
+			rows = append(rows, dashRow{sectionID: secAssigned, itemIdx: i, isIssue: true})
+		}
+		for i := range data.assignedPRs {
+			rows = append(rows, dashRow{sectionID: secAssigned, itemIdx: i, isIssue: false})
+		}
+	}
+
+	// PRs TO REVIEW
+	if len(data.reviewRequests) > 0 {
+		rows = append(rows, dashRow{isHeader: true, sectionID: secReviewRequests, itemIdx: -1})
+		for i := range data.reviewRequests {
+			rows = append(rows, dashRow{sectionID: secReviewRequests, itemIdx: i, isIssue: false})
+		}
+	}
+
 	return rows
 }
 
@@ -197,14 +205,16 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 			isIssue := row.isIssue
 			var number int
 			switch row.sectionID {
-			case secReviewRequests:
-				number = m.data.reviewRequests[row.itemIdx].Number
 			case secMyPRs:
 				number = m.data.myPRs[row.itemIdx].Number
 			case secAssigned:
-				number = m.data.assignedIssues[row.itemIdx].Number
-			case secAssignedPRs:
-				number = m.data.assignedPRs[row.itemIdx].Number
+				if row.isIssue {
+					number = m.data.assignedIssues[row.itemIdx].Number
+				} else {
+					number = m.data.assignedPRs[row.itemIdx].Number
+				}
+			case secReviewRequests:
+				number = m.data.reviewRequests[row.itemIdx].Number
 			}
 			return m, func() tea.Msg { return openItemMsg{isIssue: isIssue, number: number} }
 		}
@@ -248,10 +258,9 @@ func (m *DashboardModel) moveCursorBottom() {
 
 // DashCounts holds per-section counts for display in the header filter bar.
 type DashCounts struct {
-	ReviewRequests int
 	MyPRs          int
-	Assigned       int
-	AssignedPRs    int
+	Assigned       int // issues + PRs assigned to me
+	ReviewRequests int
 }
 
 func (m DashboardModel) Counts() DashCounts {
@@ -259,10 +268,9 @@ func (m DashboardModel) Counts() DashCounts {
 		return DashCounts{}
 	}
 	return DashCounts{
-		ReviewRequests: len(m.data.reviewRequests),
 		MyPRs:          len(m.data.myPRs),
-		Assigned:       len(m.data.assignedIssues),
-		AssignedPRs:    len(m.data.assignedPRs),
+		Assigned:       len(m.data.assignedIssues) + len(m.data.assignedPRs),
+		ReviewRequests: len(m.data.reviewRequests),
 	}
 }
 
@@ -310,12 +318,11 @@ func (m DashboardModel) View() string {
 		}
 	}
 
-	sectionIcons := [4]string{"⟳", "⎇", "●", "⤴"}
-	sectionCounts := [4]int{
-		len(m.data.reviewRequests),
+	sectionIcons := [3]string{"⎇", "●", "⟳"}
+	sectionCounts := [3]int{
 		len(m.data.myPRs),
-		len(m.data.assignedIssues),
-		len(m.data.assignedPRs),
+		len(m.data.assignedIssues) + len(m.data.assignedPRs),
+		len(m.data.reviewRequests),
 	}
 
 	// ── renderSectionHeader ───────────────────────────────────────────────────
@@ -435,100 +442,86 @@ func (m DashboardModel) View() string {
 		}
 		dimSep := base.Foreground(pal.TextFaint).Render("  ·  ")
 
+		// renderPRRow renders a PR item (used for secMyPRs, secAssigned PR rows, secReviewRequests).
+		renderPRRow := func(p github.PullRequest) {
+			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
+			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
+			var line2Left string
+			if p.HeadRefName != "" && p.BaseRefName != "" {
+				line2Left = base.Foreground(pal.TextMuted).Render(truncate(p.HeadRefName, 18)) +
+					base.Foreground(pal.Text).Render(" → ") +
+					base.Foreground(pal.TextMuted).Render(truncate(p.BaseRefName, 12))
+			} else if p.IsDraft {
+				line2Left = base.Foreground(pal.TextMuted).Render("draft")
+			}
+			if checks := summarizeChecks(p.StatusRollup, rowBg, pal); checks != "" {
+				if line2Left != "" {
+					line2Left += dimSep + checks
+				} else {
+					line2Left = checks
+				}
+			}
+			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
+		}
+
 		switch row.sectionID {
+		case secMyPRs:
+			renderPRRow(m.data.myPRs[row.itemIdx])
+
+		case secAssigned:
+			if row.isIssue {
+				iss := m.data.assignedIssues[row.itemIdx]
+				issIconColor := pal.StatusOpen
+				if strings.EqualFold(iss.State, "closed") {
+					issIconColor = pal.StatusClosed
+				}
+				icon := base.Foreground(issIconColor).Bold(true).Render("⚑")
+				ts := base.Foreground(pal.TextDim).Render(timeAgo(iss.CreatedAt))
+				labelMax := width * 40 / 100
+				if labelMax < 15 {
+					labelMax = 15
+				}
+				var assigneeText string
+				if len(iss.Assignees) > 0 {
+					assigneeText = "@" + joinUsers(iss.Assignees)
+				} else {
+					assigneeText = "unassigned"
+				}
+				line2Left := base.Foreground(pal.TextMuted).Render(truncate(assigneeText, 20))
+				const dashMaxLabels = 3
+				shownLabels := iss.Labels
+				labelOverflow := 0
+				if len(iss.Labels) > dashMaxLabels {
+					shownLabels = iss.Labels[:dashMaxLabels]
+					labelOverflow = len(iss.Labels) - dashMaxLabels
+				}
+				bgKey := string(pal.BgBody)
+				if selected {
+					bgKey = string(pal.BgSelected)
+				}
+				if labels := issueRowLabels(shownLabels, bgKey, labelMax, pal); labels != "" {
+					line2Left += dimSep + labels
+					if labelOverflow > 0 {
+						line2Left += base.Foreground(pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
+					}
+				}
+				var line2Right string
+				if iss.IssueType != "" {
+					line2Right = base.Foreground(pal.Number).Render(iss.IssueType)
+				} else {
+					line2Right = base.Foreground(pal.TextFaint).Render("—")
+				}
+				b.WriteString(renderRow(base, selected, icon, iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
+			} else {
+				renderPRRow(m.data.assignedPRs[row.itemIdx])
+			}
+
 		case secReviewRequests:
 			p := m.data.reviewRequests[row.itemIdx]
 			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
 			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
 			line2Left := base.Foreground(pal.TextMuted).Render("@"+truncate(p.Author.Login, 14)) +
 				dimSep + summarizeChecks(p.StatusRollup, rowBg, pal)
-			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
-
-		case secMyPRs:
-			p := m.data.myPRs[row.itemIdx]
-			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
-			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
-			var line2Left string
-			if p.HeadRefName != "" && p.BaseRefName != "" {
-				line2Left = base.Foreground(pal.TextMuted).Render(truncate(p.HeadRefName, 18)) +
-					base.Foreground(pal.Text).Render(" → ") +
-					base.Foreground(pal.TextMuted).Render(truncate(p.BaseRefName, 12))
-			} else if p.IsDraft {
-				line2Left = base.Foreground(pal.TextMuted).Render("draft")
-			}
-			if checks := summarizeChecks(p.StatusRollup, rowBg, pal); checks != "" {
-				if line2Left != "" {
-					line2Left += dimSep + checks
-				} else {
-					line2Left = checks
-				}
-			}
-			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
-
-		case secAssigned:
-			iss := m.data.assignedIssues[row.itemIdx]
-			issIconColor := pal.StatusOpen
-			if strings.EqualFold(iss.State, "closed") {
-				issIconColor = pal.StatusClosed
-			}
-			icon := base.Foreground(issIconColor).Bold(true).Render("⚑")
-			ts := base.Foreground(pal.TextDim).Render(timeAgo(iss.CreatedAt))
-			labelMax := width * 40 / 100
-			if labelMax < 15 {
-				labelMax = 15
-			}
-			var assigneeText string
-			if len(iss.Assignees) > 0 {
-				assigneeText = "@" + joinUsers(iss.Assignees)
-			} else {
-				assigneeText = "unassigned"
-			}
-			line2Left := base.Foreground(pal.TextMuted).Render(truncate(assigneeText, 20))
-			const dashMaxLabels = 3
-			shownLabels := iss.Labels
-			labelOverflow := 0
-			if len(iss.Labels) > dashMaxLabels {
-				shownLabels = iss.Labels[:dashMaxLabels]
-				labelOverflow = len(iss.Labels) - dashMaxLabels
-			}
-			bgKey := string(pal.BgBody)
-			if selected {
-				bgKey = string(pal.BgSelected)
-			}
-			if labels := issueRowLabels(shownLabels, bgKey, labelMax, pal); labels != "" {
-				line2Left += dimSep + labels
-				if labelOverflow > 0 {
-					line2Left += base.Foreground(pal.TextDim).Render(fmt.Sprintf(" +%d", labelOverflow))
-				}
-			}
-			// Type badge — always rendered (dim "—" when no type), matching Issues list.
-			var line2Right string
-			if iss.IssueType != "" {
-				line2Right = base.Foreground(pal.Number).Render(iss.IssueType)
-			} else {
-				line2Right = base.Foreground(pal.TextFaint).Render("—")
-			}
-			b.WriteString(renderRow(base, selected, icon, iss.Title, ts, line2Left, line2Right, iss.Number) + "\n")
-
-		case secAssignedPRs:
-			p := m.data.assignedPRs[row.itemIdx]
-			icon := base.Foreground(prIconColor(p.State, p.IsDraft)).Bold(true).Render("⤴")
-			ts := base.Foreground(pal.TextDim).Render(timeAgo(p.CreatedAt))
-			var line2Left string
-			if p.HeadRefName != "" && p.BaseRefName != "" {
-				line2Left = base.Foreground(pal.TextMuted).Render(truncate(p.HeadRefName, 18)) +
-					base.Foreground(pal.Text).Render(" → ") +
-					base.Foreground(pal.TextMuted).Render(truncate(p.BaseRefName, 12))
-			} else if p.IsDraft {
-				line2Left = base.Foreground(pal.TextMuted).Render("draft")
-			}
-			if checks := summarizeChecks(p.StatusRollup, rowBg, pal); checks != "" {
-				if line2Left != "" {
-					line2Left += dimSep + checks
-				} else {
-					line2Left = checks
-				}
-			}
 			b.WriteString(renderRow(base, selected, icon, p.Title, ts, line2Left, "", p.Number) + "\n")
 		}
 	}

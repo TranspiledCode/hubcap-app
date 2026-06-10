@@ -32,6 +32,11 @@ const (
 	// spacer (1) + row1 (1) + half-line gap (1) + row2 (1) + separator (1) = 5
 	metaStripHeight = 5
 
+	// prMetaStripHeight is the fixed line count for the PR detail meta strip,
+	// which has an extra info row (assignee · created · reviewers):
+	// spacer(1) + row1(1) + blank(1) + branches/author(1) + info(1) + separator(1) = 6
+	prMetaStripHeight = 6
+
 	// metaStripExpandedHeight is the line count when the meta strip is expanded.
 	// spacer(1) + title(1) + thinGap(1) + assignee/type/author/created(1)
 	// + halfGap(1) + labels(1) + halfGap(1) + separator(1) = 8
@@ -217,10 +222,9 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 				return countStyle.Render(fmt.Sprintf("%d", n))
 			}
 			filterContent = indent +
-				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" review requests") + sep +
 				countOrDash(counts.MyPRs) + filterKeyStyle.Render(" my PRs") + sep +
-				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned issues") + sep +
-				countOrDash(counts.AssignedPRs) + filterKeyStyle.Render(" assigned PRs")
+				countOrDash(counts.Assigned) + filterKeyStyle.Render(" assigned") + sep +
+				countOrDash(counts.ReviewRequests) + filterKeyStyle.Render(" to review")
 		}
 		b.WriteString(filterContent + "\n")
 		// Separator between filter bar and content body, plus a blank line of breathing room.
@@ -475,14 +479,15 @@ func prStatusPill(stripBg lipgloss.Color, bg lipgloss.Color, fg lipgloss.Color, 
 	return gutter + chip + gutter
 }
 
-// renderPRMetaStrip renders the fixed 5-line metadata strip shown above the
-// viewport in PR detail view. Always produces exactly metaStripHeight lines.
+// renderPRMetaStrip renders the fixed 6-line metadata strip shown above the
+// viewport in PR detail view. Always produces exactly prMetaStripHeight lines.
 //
 //	Line 1 — spacer
 //	Line 2 — #number  title (truncated)  ···  ● STATE
 //	Line 3 — blank gap
 //	Line 4 — ⎇ head → base · by author (left)  ···  status + label pills (right)
-//	Line 5 — separator
+//	Line 5 — Assignee: …  ·  Created: …  ·  Reviewers: …
+//	Line 6 — separator
 func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 	if width == 0 {
 		width = 80
@@ -598,10 +603,33 @@ func renderPRMetaStrip(pr github.PullRequest, width int, pal Palette) string {
 	rightW := lipgloss.Width(rightStr)
 	row2 := leftStr + fill(width-leftW-rightW) + rightStr
 
-	// ── Line 5: separator ────────────────────────────────────────────────────
+	// ── Line 5: Assignee · Created · Reviewers ──────────────────────────────
+	var infoParts []string
+
+	assigneeVal := mutedSt.Render("unassigned")
+	if len(pr.Assignees) > 0 {
+		assigneeVal = authorSt.Render(joinUsers(pr.Assignees))
+	}
+	infoParts = append(infoParts, mutedSt.Render("Assignee: ")+assigneeVal)
+
+	if pr.CreatedAt != "" {
+		infoParts = append(infoParts, mutedSt.Render("Created: ")+authorSt.Render(timeAgo(pr.CreatedAt)))
+	}
+
+	if len(pr.RequestedReviewers) > 0 {
+		infoParts = append(infoParts, mutedSt.Render("Reviewers: ")+authorSt.Render(joinUsers(pr.RequestedReviewers)))
+	} else {
+		infoParts = append(infoParts, mutedSt.Render("Reviewers: ")+mutedSt.Render("none"))
+	}
+
+	infoStr := s.Render("  ") + strings.Join(infoParts, dot)
+	infoW := lipgloss.Width(infoStr)
+	row3 := infoStr + fill(width-infoW)
+
+	// ── Line 6: separator ────────────────────────────────────────────────────
 	sepLine := metaSepLine(width, pal)
 
-	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + sepLine + "\n"
+	return spacer + "\n" + row1 + "\n" + blank + "\n" + row2 + "\n" + row3 + "\n" + sepLine + "\n"
 }
 
 // formatDurationShort formats a time.Duration in a very compact way for the header

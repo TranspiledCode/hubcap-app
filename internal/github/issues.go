@@ -212,6 +212,44 @@ func UnassignIssueSelf(number int) error {
 	return err
 }
 
+// AssignIssue assigns a specific user to an issue.
+func AssignIssue(number int, login string) error {
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-assignee", login)
+	return err
+}
+
+// UnassignIssue removes a specific user from an issue's assignees.
+func UnassignIssue(number int, login string) error {
+	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--remove-assignee", login)
+	return err
+}
+
+// ClearIssueAssignees removes all assignees from an issue.
+func ClearIssueAssignees(number int, assignees []string) error {
+	for _, login := range assignees {
+		if _, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--remove-assignee", login); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateIssueAssignees adds and removes assignees in a single gh call.
+func UpdateIssueAssignees(number int, add []string, remove []string) error {
+	if len(add) == 0 && len(remove) == 0 {
+		return nil
+	}
+	args := []string{"issue", "edit", strconv.Itoa(number)}
+	for _, login := range add {
+		args = append(args, "--add-assignee", login)
+	}
+	for _, login := range remove {
+		args = append(args, "--remove-assignee", login)
+	}
+	_, err := RunCommand("gh", args...)
+	return err
+}
+
 func AddIssueLabel(number int, label string) error {
 	_, err := RunCommand("gh", "issue", "edit", strconv.Itoa(number), "--add-label", label)
 	return err

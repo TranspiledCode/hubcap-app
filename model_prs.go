@@ -124,18 +124,35 @@ const (
 	prFormMerge             // "m" — choose merge strategy
 	prFormNew               // "n" — create a new PR
 	prFormReview            // "v" — request a reviewer
+	prFormAssign            // "a" — assign to a specific user
 )
 
 // prFormVals is heap-allocated so huh's Value() pointers remain valid across
 // BubbleTea value-receiver model copies.
 type prFormVals struct {
-	formType    prFormType
-	mergeType   string
-	newTitle    string
-	newBody     string
-	newBase     string
-	newDraft    bool
-	reviewerVal string
+	formType          prFormType
+	mergeType         string
+	newTitle          string
+	newBody           string
+	newBase           string
+	newDraft          bool
+	reviewerVals      []string // selected reviewer logins (multi-select)
+	originalReviewers []string // reviewers when the form was opened (for diffing)
+	assigneeVals      []string // selected assignee logins (multi-select)
+	originalAssignees []string // assignees when the form was opened (for diffing)
+}
+
+// prAssigneeDataFetchedMsg carries the collaborator list for the PR assignee form.
+type prAssigneeDataFetchedMsg struct {
+	assignees []string
+	err       error
+}
+
+func fetchPRAssigneeDataCmd() tea.Cmd {
+	return func() tea.Msg {
+		assignees, err := github.FetchAssignees()
+		return prAssigneeDataFetchedMsg{assignees: assignees, err: err}
+	}
 }
 
 // ── PRListItem ────────────────────────────────────────────────────────────────
@@ -388,7 +405,8 @@ type PRsModel struct {
 	// formVals is heap-allocated for stable pointers across model copies.
 	activeForm          *huh.Form
 	formVals            *prFormVals
-	loadingReviewerForm bool // true while fetching collaborators for reviewer select
+	loadingReviewerForm  bool // true while fetching collaborators for reviewer select
+	loadingPRAssigneeForm bool // true while fetching collaborators for assignee select
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.
 	uiTheme UITheme
@@ -506,22 +524,107 @@ func (m PRsModel) handleFormComplete() (PRsModel, tea.Cmd) {
 		)
 
 	case prFormReview:
-		reviewer := strings.TrimSpace(m.formVals.reviewerVal)
-		if reviewer == "" {
+		pr := m.detailPR
+
+		// Diff: compute reviewers to add and remove.
+		newSet := make(map[string]bool, len(m.formVals.reviewerVals))
+		for _, l := range m.formVals.reviewerVals {
+			newSet[l] = true
+		}
+		oldSet := make(map[string]bool, len(m.formVals.originalReviewers))
+		for _, l := range m.formVals.originalReviewers {
+			oldSet[l] = true
+		}
+		var add, remove []string
+		for l := range newSet {
+			if !oldSet[l] {
+				add = append(add, l)
+			}
+		}
+		for l := range oldSet {
+			if !newSet[l] {
+				remove = append(remove, l)
+			}
+		}
+		if len(add) == 0 && len(remove) == 0 {
 			return m, nil
 		}
-		pr := m.detailPR
-		m.actionPending = fmt.Sprintf("Requesting review from @%s…", reviewer)
+
+		var done string
+		switch {
+		case len(add) > 0 && len(remove) > 0:
+			done = fmt.Sprintf("Reviewers updated (+%d / -%d).", len(add), len(remove))
+		case len(add) > 0:
+			done = fmt.Sprintf("Review requested from @%s.", strings.Join(add, ", @"))
+		default:
+			done = fmt.Sprintf("Removed reviewer @%s.", strings.Join(remove, ", @"))
+		}
+
+		m.actionPending = "Updating reviewers…"
 		m.actionMsg = ""
 		m.actionErr = nil
+		num := pr.Number
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			if err := github.RequestReview(pr.Number, reviewer); err != nil {
+			if err := github.UpdatePRReviewers(num, add, remove); err != nil {
 				return prActionErrMsg{err: err}
 			}
-			return prActionDoneMsg{
-				message: fmt.Sprintf("Review requested from @%s.", reviewer),
-				number:  pr.Number,
+			return prActionDoneMsg{message: done, number: num}
+		})
+
+	case prFormAssign:
+		pr := m.detailPR
+		if pr.Number == 0 {
+			if item, ok := m.list.SelectedItem().(prListItem); ok {
+				pr = item.pr
 			}
+		}
+		if pr.Number == 0 {
+			return m, nil
+		}
+
+		newSet := make(map[string]bool, len(m.formVals.assigneeVals))
+		for _, l := range m.formVals.assigneeVals {
+			newSet[l] = true
+		}
+		oldSet := make(map[string]bool, len(m.formVals.originalAssignees))
+		for _, l := range m.formVals.originalAssignees {
+			oldSet[l] = true
+		}
+		var add, remove []string
+		for l := range newSet {
+			if !oldSet[l] {
+				add = append(add, l)
+			}
+		}
+		for l := range oldSet {
+			if !newSet[l] {
+				remove = append(remove, l)
+			}
+		}
+		if len(add) == 0 && len(remove) == 0 {
+			return m, nil
+		}
+
+		var done string
+		switch {
+		case len(add) > 0 && len(remove) > 0:
+			done = fmt.Sprintf("Assignees updated (+%d / -%d).", len(add), len(remove))
+		case len(add) > 0:
+			done = fmt.Sprintf("Assigned @%s.", strings.Join(add, ", @"))
+		default:
+			done = fmt.Sprintf("Unassigned @%s.", strings.Join(remove, ", @"))
+		}
+
+		m.actionPending = "Updating assignees…"
+		m.actionMsg = ""
+		m.actionErr = nil
+		num := pr.Number
+		inDetail := m.showDetail
+		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			if err := github.UpdatePRAssignees(num, add, remove); err != nil {
+				return prActionErrMsg{err: err}
+			}
+			return prActionDoneMsg{message: done, number: num, silentRefresh: !inDetail}
 		})
 	}
 
@@ -593,7 +696,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.detailPR = msg.pr
-		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+		m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme))
 		m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 		m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 		m.showDetail = true
@@ -650,29 +753,84 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 
 	case reviewerDataFetchedMsg:
 		m.loadingReviewerForm = false
+
+		// Pre-populate with the PR's current requested reviewers.
+		var currentReviewers []string
+		for _, u := range m.detailPR.RequestedReviewers {
+			currentReviewers = append(currentReviewers, u.Login)
+		}
+		m.formVals.originalReviewers = currentReviewers
+		m.formVals.reviewerVals = append([]string(nil), currentReviewers...)
+		m.formVals.formType = prFormReview
+
 		if msg.err != nil || len(msg.reviewers) == 0 {
-			// Fallback: show a plain text input if fetch failed or repo has no collaborators.
-			m.formVals.reviewerVal = ""
-			m.formVals.formType = prFormReview
+			// Fallback: plain text input if fetch failed or repo has no collaborators.
+			m.formVals.reviewerVals = nil
 			m.activeForm = huh.NewForm(huh.NewGroup(
 				huh.NewInput().
 					Title("Request reviewer").
 					Placeholder("GitHub username").
-					Value(&m.formVals.reviewerVal),
+					Value(&m.formVals.newTitle), // reuse newTitle as scratch space
 			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 			return m, m.activeForm.Init()
 		}
+
+		// Build multi-select options. Pre-selection is driven by the initial
+		// value of reviewerVals — do NOT use Selected(true) or huh will scroll
+		// the cursor to the last checked item instead of starting at the top.
 		opts := make([]huh.Option[string], len(msg.reviewers))
 		for i, r := range msg.reviewers {
 			opts[i] = huh.NewOption(r, r)
 		}
-		m.formVals.reviewerVal = msg.reviewers[0]
-		m.formVals.formType = prFormReview
 		m.activeForm = huh.NewForm(huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Request reviewer").
+			huh.NewMultiSelect[string]().
+				Title("Reviewers").
+				Description("Space to toggle, enter to confirm, esc to cancel").
 				Options(opts...).
-				Value(&m.formVals.reviewerVal),
+				Value(&m.formVals.reviewerVals),
+		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+		return m, m.activeForm.Init()
+
+	case prAssigneeDataFetchedMsg:
+		m.loadingPRAssigneeForm = false
+
+		// Pre-populate with the PR's current assignees.
+		var currentAssignees []string
+		if m.showDetail {
+			for _, u := range m.detailPR.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		} else if item, ok := m.list.SelectedItem().(prListItem); ok {
+			for _, u := range item.pr.Assignees {
+				currentAssignees = append(currentAssignees, u.Login)
+			}
+		}
+		m.formVals.originalAssignees = currentAssignees
+		m.formVals.assigneeVals = append([]string(nil), currentAssignees...)
+		m.formVals.formType = prFormAssign
+
+		if msg.err != nil || len(msg.assignees) == 0 {
+			m.formVals.assigneeVals = nil
+			m.activeForm = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Assign to").
+					Placeholder("GitHub username").
+					Value(&m.formVals.newBase), // reuse newBase as scratch space
+			)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
+			return m, m.activeForm.Init()
+		}
+
+		// Build multi-select options — no Selected(true) so cursor starts at top.
+		opts := make([]huh.Option[string], len(msg.assignees))
+		for i, a := range msg.assignees {
+			opts[i] = huh.NewOption(a, a)
+		}
+		m.activeForm = huh.NewForm(huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Assignees").
+				Description("Space to toggle, enter to confirm, esc to cancel").
+				Options(opts...).
+				Value(&m.formVals.assigneeVals),
 		)).WithTheme(buildHuhTheme(m.palette)).WithShowHelp(false).WithWidth(formWidth(m.width, m.uiTheme))
 		return m, m.activeForm.Init()
 
@@ -682,19 +840,19 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 		m.list.SetSize(m.width-4, m.height-headerHeight()-2)
 		if m.showDetail {
 			m.detail.Width = m.width - 4
-			m.detail.Height = detailViewportHeight(m.height, metaStripHeight, m.uiTheme)
+			m.detail.Height = detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme)
 		}
 
 	case spinner.TickMsg:
 		// Keep spinning while loading or while a background action is in flight.
-		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingReviewerForm {
+		if m.loading || m.loadingDetail || m.actionPending != "" || m.loadingReviewerForm || m.loadingPRAssigneeForm {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 
 	case tea.KeyMsg:
-		if m.loading || m.loadingDetail || m.loadingReviewerForm {
+		if m.loading || m.loadingDetail || m.loadingReviewerForm || m.loadingPRAssigneeForm {
 			break
 		}
 
@@ -781,31 +939,13 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				m.loadingReviewerForm = true
 				return m, tea.Batch(fetchReviewerDataCmd(), m.spinner.Tick)
 			case key.Matches(msg, keys.IssueAssign):
-				// Assign/unassign @me — not allowed on merged or closed PRs.
-				pr := m.detailPR
-				if strings.EqualFold(pr.State, "merged") || strings.EqualFold(pr.State, "closed") {
+				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
 					return m, nil
 				}
-				if isMeAssigned(pr.Assignees, m.currentUser) {
-					m.actionPending = "Unassigning from @me…"
-					m.actionMsg = ""
-					m.actionErr = nil
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.UnassignPRSelf(pr.Number); err != nil {
-							return prActionErrMsg{err: err}
-						}
-						return prActionDoneMsg{message: "Unassigned from @me.", number: pr.Number}
-					})
-				}
-				m.actionPending = "Assigning to @me…"
+				m.loadingPRAssigneeForm = true
 				m.actionMsg = ""
 				m.actionErr = nil
-				return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-					if err := github.AssignPRSelf(pr.Number); err != nil {
-						return prActionErrMsg{err: err}
-					}
-					return prActionDoneMsg{message: "Assigned to @me.", number: pr.Number}
-				})
+				return m, tea.Batch(m.spinner.Tick, fetchPRAssigneeDataCmd())
 			case key.Matches(msg, keys.PRMerge):
 				// Merge — not allowed on already merged or closed PRs.
 				if strings.EqualFold(m.detailPR.State, "merged") || strings.EqualFold(m.detailPR.State, "closed") {
@@ -850,36 +990,13 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				}
 			case key.Matches(msg, keys.IssueAssign):
 				if item, ok := m.list.SelectedItem().(prListItem); ok {
-					pr := item.pr
-					if isMeAssigned(pr.Assignees, m.currentUser) {
-						// Drop — remove @me, leave any other assignees.
-						m.actionPending = "Dropping…"
-						m.actionMsg = ""
-						m.actionErr = nil
-						return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-							if err := github.UnassignPRSelf(pr.Number); err != nil {
-								return prActionErrMsg{err: err}
-							}
-							return prActionDoneMsg{message: "Dropped.", silentRefresh: true}
-						})
+					if strings.EqualFold(item.pr.State, "merged") || strings.EqualFold(item.pr.State, "closed") {
+						return m, nil
 					}
-					// Grab (unassigned) or Take (assigned to someone else).
-					verb := "Grabbing…"
-					done := "Grabbed."
-					if len(pr.Assignees) > 0 {
-						verb = "Taking…"
-						done = "Taken."
-					}
-					m.actionPending = verb
+					m.loadingPRAssigneeForm = true
 					m.actionMsg = ""
 					m.actionErr = nil
-					doneMsg := done
-					return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-						if err := github.AssignPRSelf(pr.Number); err != nil {
-							return prActionErrMsg{err: err}
-						}
-						return prActionDoneMsg{message: doneMsg, silentRefresh: true}
-					})
+					return m, tea.Batch(m.spinner.Tick, fetchPRAssigneeDataCmd())
 				}
 			case key.Matches(msg, keys.New):
 				m.formVals.newTitle = ""
@@ -918,7 +1035,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 				// Use prefetched detail immediately if available — no spinner needed.
 				if prefetched, ok := m.prefetchedDetails[item.pr.Number]; ok {
 					m.detailPR = prefetched
-					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, metaStripHeight, m.uiTheme))
+					m.detail = viewport.New(m.width-4, detailViewportHeight(m.height, prMetaStripHeight, m.uiTheme))
 					m.detail.Style = lipgloss.NewStyle().Background(m.palette.BgBody)
 					m.detail.SetContent(lipgloss.NewStyle().Foreground(m.palette.TextDim).Background(m.palette.BgBody).Render("Rendering…") + "\n")
 					m.showDetail = true

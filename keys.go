@@ -75,7 +75,7 @@ var keys = keyMap{
 
 	// ── Issue detail ──────────────────────────────────────────────────────
 	IssueClose:      key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close/reopen")),
-	IssueAssign:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "assign/unassign")),
+	IssueAssign:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "assign to user")),
 	IssueLabel:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "add label")),
 	IssueDevelop:    key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "develop")),
 	IssuePR:         key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "create PR")),
