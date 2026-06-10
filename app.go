@@ -1208,62 +1208,57 @@ func (m AppModel) View() string {
 
 	pal := m.palette
 
-	// ── Config form overlay ───────────────────────────────────────────────────
-	// Show the configuration form when active.
-	if m.configForm != nil {
-		body := m.configForm.View()
-		if bg := string(pal.BgBody); bg != "" {
-			body = injectDocBg(body, bg)
-		}
-
-		appBorder := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(pal.Title).
-			Background(pal.BgBody).
-			Width(innerW)
-		return appBorder.Render(body)
-	}
-
-	// ── Filter loading / form overlay ─────────────────────────────────────────
-	// Show spinner while fetching filter data, then the embedded form.
-	// Both replace the normal body content — no terminal suspension.
-	if m.filterLoading || m.filterForm != nil {
-		var body string
-		if m.filterLoading {
-			body = "\n  " + m.spinner.View() + " Loading filter options…\n"
-		} else {
-			body = m.filterForm.View()
-		}
-		if bg := string(pal.BgBody); bg != "" {
-			body = injectDocBg(body, bg)
-		}
-
-		appBorder := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(pal.Title).
-			Background(pal.BgBody).
-			Width(innerW)
-		return appBorder.Render(body)
-	}
-
 	inDetail := inDetailMode(m)
 	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix(), pal)
 
+	// ── Body content ──────────────────────────────────────────────────────────
+	// Config form, filter loading, and filter form all display inside the main
+	// viewport (with the shared header and footer), matching the pattern used
+	// by the inline forms in the Issues and PRs sub-models.
 	var body string
-	switch m.activeTab {
-	case TabIssues:
-		body = m.issues.View()
-	case TabPRs:
-		body = m.prs.View()
-	case TabDashboard:
-		body = m.dashboard.View()
+	switch {
+	case m.configForm != nil:
+		body = m.configForm.View()
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+	case m.filterLoading:
+		body = "\n  " + m.spinner.View() + " Loading filter options…\n"
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+	case m.filterForm != nil:
+		body = m.filterForm.View()
+		if bg := string(pal.BgBody); bg != "" {
+			body = injectDocBg(body, bg)
+		}
+	default:
+		switch m.activeTab {
+		case TabIssues:
+			body = m.issues.View()
+		case TabPRs:
+			body = m.prs.View()
+		case TabDashboard:
+			body = m.dashboard.View()
+		}
 	}
 
 	theme := resolveTheme(m.cfg.UITheme)
+	formFooter := RenderFooterBar(innerW, theme, pal,
+		NewKeyButton("tab", "next field", pal.Meta),
+		NewKeyButton("shift+tab", "prev field", pal.Meta),
+		NewKeyButton("esc", "cancel", pal.Danger),
+	)
 	var footer string
 	switch {
 	case m.confirmingQuit:
 		footer = quitConfirmFooter(innerW, theme, pal)
+	case m.configForm != nil:
+		footer = formFooter
+	case m.filterLoading:
+		footer = footerPendingToast(m.spinner.View(), "Loading filter options…", innerW, theme, pal)
+	case m.filterForm != nil:
+		footer = formFooter
 	case inDetail:
 		footer = detailActionFooter(m, innerW)
 	default:
