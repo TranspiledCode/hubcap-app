@@ -192,6 +192,9 @@ type AppModel struct {
 	// themeToastMsg is set briefly when the user cycles themes with t.
 	// It is cleared after 2 seconds by a clearThemeToastMsg.
 	themeToastMsg string
+
+	// showSplash is true while the welcome/splash screen is visible at startup.
+	showSplash bool
 }
 
 func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters github.PRFilters, cache AppCache) AppModel {
@@ -246,6 +249,7 @@ func newAppModel(repo string, cfg Config, issueFilters github.Filters, prFilters
 		prFilterVals:    &PRFilterVals{},
 		configVals:      &ConfigVals{},
 		helpVP:          helpVP,
+		showSplash:      true,
 	}
 }
 
@@ -263,6 +267,7 @@ func fetchCurrentUserCmd() tea.Cmd {
 
 func (m AppModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
+		splashTimerCmd(),
 		m.spinner.Tick,
 		m.dashboard.spinner.Tick,
 		m.dashboard.fetchCmd(),
@@ -368,6 +373,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Snapshot detail state before processing — used to detect header changes.
 	wasInDetail := inDetailMode(m)
+
+	// ── Splash screen — dismiss on timer or any keypress ─────────────────────
+	// All other messages (data fetches, spinner ticks, window resize) fall
+	// through so background work completes while the splash is visible.
+	if m.showSplash {
+		switch msg.(type) {
+		case splashDoneMsg:
+			m.showSplash = false
+			return m, nil
+		case tea.KeyMsg:
+			m.showSplash = false
+			return m, nil
+		}
+	}
 
 	// ── Help overlay — scroll or dismiss ─────────────────────────────────────
 	if m.showHelp {
@@ -1172,6 +1191,11 @@ func helpOverlayView(m AppModel, innerW int) string {
 func (m AppModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
+	}
+
+	// ── Splash screen ─────────────────────────────────────────────────────────
+	if m.showSplash {
+		return splashView(m)
 	}
 
 	innerW := m.width - 2
