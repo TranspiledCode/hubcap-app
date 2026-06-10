@@ -403,9 +403,9 @@ type PRsModel struct {
 
 	// Inline form (merge strategy, new PR, reviewer). activeForm is nil when closed.
 	// formVals is heap-allocated for stable pointers across model copies.
-	activeForm          *huh.Form
-	formVals            *prFormVals
-	loadingReviewerForm  bool // true while fetching collaborators for reviewer select
+	activeForm            *huh.Form
+	formVals              *prFormVals
+	loadingReviewerForm   bool // true while fetching collaborators for reviewer select
 	loadingPRAssigneeForm bool // true while fetching collaborators for assignee select
 
 	// uiTheme mirrors Config.UITheme and controls form width + footer density.

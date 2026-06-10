@@ -49,10 +49,10 @@ func splashView(m AppModel) string {
 
 	bg := pal.BgBody
 
-	bgSt   := lipgloss.NewStyle().Background(bg)
+	bgSt := lipgloss.NewStyle().Background(bg)
 	logoSt := lipgloss.NewStyle().Foreground(pal.Accent).Bold(true).Background(bg)
-	tagSt  := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(bg)
-	verSt  := lipgloss.NewStyle().Foreground(pal.TextDim).Background(bg)
+	tagSt := lipgloss.NewStyle().Foreground(pal.TextMuted).Background(bg)
+	verSt := lipgloss.NewStyle().Foreground(pal.TextDim).Background(bg)
 	hintSt := lipgloss.NewStyle().Foreground(pal.TextFaint).Background(bg)
 
 	blankLine := bgSt.Width(innerW).Render("")
