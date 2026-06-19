@@ -88,13 +88,64 @@ func repoOwnerName() (owner, name string, err error) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// buildFetchIssuesArgs constructs the gh CLI args for FetchIssues.
+// Extracted so the query-building logic can be unit-tested without invoking gh.
+// label and milestone are passed as typed GraphQL variables ($label, $milestone)
+// so user-supplied values are never interpolated into the query string.
+func buildFetchIssuesArgs(owner, name string, filters Filters, assignee string) []string {
+	states := gqlStateFilter(filters.State)
+
+	fb := fmt.Sprintf("states:[%s]", states)
+	if assignee != "" {
+		fb += fmt.Sprintf(`, assignee:"%s"`, assignee)
+	}
+	if filters.Label != "" {
+		fb += `, labels:[$label]`
+	}
+	if filters.Milestone != "" {
+		fb += `, milestone:$milestone`
+	}
+
+	// Only declare $label / $milestone variables when they are referenced in
+	// filterBy — GraphQL rejects declared-but-unused variables.
+	varDecls := "$owner:String!, $name:String!, $limit:Int!"
+	if filters.Label != "" {
+		varDecls += ", $label:String"
+	}
+	if filters.Milestone != "" {
+		varDecls += ", $milestone:String"
+	}
+
+	query := fmt.Sprintf(`
+query(%s) {
+  repository(owner:$owner, name:$name) {
+    issues(first:$limit, filterBy:{%s}, orderBy:{field:CREATED_AT, direction:DESC}) {
+      nodes {%s
+      }
+    }
+  }
+}`, varDecls, fb, issueFields)
+
+	args := []string{"api", "graphql",
+		"-f", "query=" + query,
+		"-f", "owner=" + owner,
+		"-f", "name=" + name,
+		"-F", "limit=" + strconv.Itoa(filters.Limit),
+	}
+	if filters.Label != "" {
+		args = append(args, "-f", "label="+filters.Label)
+	}
+	if filters.Milestone != "" {
+		args = append(args, "-f", "milestone="+filters.Milestone)
+	}
+	return args
+}
+
 func FetchIssues(filters Filters) ([]Issue, error) {
 	owner, name, err := repoOwnerName()
 	if err != nil {
 		return nil, err
 	}
-
-	states := gqlStateFilter(filters.State)
 
 	// Resolve "@me" to the actual login — GraphQL filterBy does not accept it.
 	assignee := filters.Assignee
@@ -104,34 +155,8 @@ func FetchIssues(filters Filters) ([]Issue, error) {
 		}
 	}
 
-	// Build inline filterBy — values come from our own form so no injection risk.
-	fb := fmt.Sprintf("states:[%s]", states)
-	if assignee != "" {
-		fb += fmt.Sprintf(`, assignee:"%s"`, assignee)
-	}
-	if filters.Label != "" {
-		fb += fmt.Sprintf(`, labels:["%s"]`, filters.Label)
-	}
-	if filters.Milestone != "" {
-		fb += fmt.Sprintf(`, milestone:"%s"`, filters.Milestone)
-	}
-
-	query := fmt.Sprintf(`
-query($owner:String!, $name:String!, $limit:Int!) {
-  repository(owner:$owner, name:$name) {
-    issues(first:$limit, filterBy:{%s}, orderBy:{field:CREATED_AT, direction:DESC}) {
-      nodes {%s
-      }
-    }
-  }
-}`, fb, issueFields)
-
-	out, err := RunCommand("gh", "api", "graphql",
-		"-f", "query="+query,
-		"-f", "owner="+owner,
-		"-f", "name="+name,
-		"-F", "limit="+strconv.Itoa(filters.Limit),
-	)
+	args := buildFetchIssuesArgs(owner, name, filters, assignee)
+	out, err := RunCommand("gh", args...)
 	if err != nil {
 		return nil, err
 	}
