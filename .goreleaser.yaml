@@ -48,7 +48,7 @@ brews:
     directory: Formula
     homepage: "https://github.com/TranspiledCode/hubcap-app"
     description: "GitHub in your terminal — browse issues and PRs, check CI, merge, and act with keyboard shortcuts"
-    license: "MIT"
+    license: "AGPL-3.0-only"
     dependencies:
       - name: gh
     install: |
