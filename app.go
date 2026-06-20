@@ -1209,7 +1209,22 @@ func (m AppModel) View() string {
 	pal := m.palette
 
 	inDetail := inDetailMode(m)
-	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, m.dashboard.Counts(), innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix(), pal)
+	dashCounts := m.dashboard.Counts()
+	tabCounts := TabCounts{
+		Dashboard: dashCounts.MyPRs + dashCounts.Assigned + dashCounts.ReviewRequests,
+		Issues:    len(m.issues.list.Items()),
+		PRs:       len(m.prs.list.Items()),
+	}
+	if !m.dashboard.loaded {
+		tabCounts.Dashboard = -1
+	}
+	if m.issues.loading && tabCounts.Issues == 0 {
+		tabCounts.Issues = -1
+	}
+	if m.prs.loading && tabCounts.PRs == 0 {
+		tabCounts.PRs = -1
+	}
+	header := headerView(m.activeTab, m.repo, m.issues.filters, m.prs.filters, dashCounts, tabCounts, innerW, inDetail, m.cfg.AutoRefreshEnabled, m.cfg.AutoRefreshInterval, m.lastRefreshTime, time.Now().Unix(), pal)
 
 	// ── Body content ──────────────────────────────────────────────────────────
 	// Config form, filter loading, and filter form all display inside the main
