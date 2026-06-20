@@ -63,8 +63,17 @@ func detailViewportHeight(termH, metaH int, theme UITheme) int {
 	return h
 }
 
+// TabCounts holds the per-tab item counts shown in the tab bar labels.
+// A value of -1 signals that the count is not yet available (still loading),
+// which renders as "…" instead of a number.
+type TabCounts struct {
+	Dashboard int // total items on the dashboard (review requests + my PRs + assigned)
+	Issues    int // items in the current filtered issues list
+	PRs       int // items in the current filtered PRs list
+}
+
 // headerView returns the header as a string for use in bubbletea View() functions.
-func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64, pal Palette) string {
+func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFilters github.PRFilters, counts DashCounts, tabCounts TabCounts, width int, detailActive bool, autoRefreshEnabled bool, autoRefreshInterval int, lastRefresh int64, currentTime int64, pal Palette) string {
 	if width == 0 {
 		width = 80
 	}
@@ -79,15 +88,6 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	helpStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.TextMuted)
 	refreshStyle := lipgloss.NewStyle().Background(bg).Foreground(pal.Accent).Bold(true)
 
-	tabActiveStyle := lipgloss.NewStyle().
-		Background(tabBg).
-		Foreground(pal.Accent).
-		Bold(true).
-		Padding(0, 2)
-	tabInactiveStyle := lipgloss.NewStyle().
-		Background(tabBg).
-		Foreground(pal.TextMuted).
-		Padding(0, 2)
 	tabFillStyle := lipgloss.NewStyle().Background(tabBg)
 
 	// Filter bar — body background so light themes don't show terminal default.
@@ -149,25 +149,47 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	b.WriteString(lipgloss.NewStyle().Background(pal.BgHeader).Foreground(pal.BgTabs).Render(strings.Repeat("▄", width)) + "\n")
 
 	// ── Line 2: tabs ──────────────────────────────────────────────────────
-	tabActiveStyle = tabActiveStyle.Underline(true)
+	// Each tab is two adjacent styled strings sharing tabBg — the label (accented
+	// or muted) followed by the item count (dimmer). Splitting into two renders
+	// lets us colour them independently without any background-colour gap.
+	nameActiveStyle := lipgloss.NewStyle().
+		Background(tabBg).Foreground(pal.Accent).Bold(true).Underline(true)
+	nameInactiveStyle := lipgloss.NewStyle().
+		Background(tabBg).Foreground(pal.TextMuted)
+	cntActiveStyle := lipgloss.NewStyle().
+		Background(tabBg).Foreground(pal.TextMuted)
+	cntInactiveStyle := lipgloss.NewStyle().
+		Background(tabBg).Foreground(pal.TextFaint)
 
 	type tabDef struct {
 		label string
 		id    TabID
+		count int
 	}
 	tabs := []tabDef{
-		{"1: Dashboard", TabDashboard},
-		{"2: Issues", TabIssues},
-		{"3: Pull Requests", TabPRs},
+		{"1: Dashboard", TabDashboard, tabCounts.Dashboard},
+		{"2: Issues", TabIssues, tabCounts.Issues},
+		{"3: Pull Requests", TabPRs, tabCounts.PRs},
 	}
 	var tabRow strings.Builder
 	tabsWidth := 0
 	for _, t := range tabs {
-		var rendered string
-		if t.id == activeTab {
-			rendered = tabActiveStyle.Render(t.label)
+		isActive := t.id == activeTab
+
+		var cntStr string
+		if t.count < 0 {
+			cntStr = " …"
 		} else {
-			rendered = tabInactiveStyle.Render(t.label)
+			cntStr = fmt.Sprintf(" %d", t.count)
+		}
+
+		var rendered string
+		if isActive {
+			rendered = nameActiveStyle.Render("  "+t.label) +
+				cntActiveStyle.Render(cntStr+"  ")
+		} else {
+			rendered = nameInactiveStyle.Render("  "+t.label) +
+				cntInactiveStyle.Render(cntStr+"  ")
 		}
 		tabRow.WriteString(rendered)
 		tabsWidth += lipgloss.Width(rendered)
