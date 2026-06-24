@@ -157,9 +157,10 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 	nameInactiveStyle := lipgloss.NewStyle().
 		Background(tabBg).Foreground(pal.TextMuted)
 	cntActiveStyle := lipgloss.NewStyle().
-		Background(tabBg).Foreground(pal.TextMuted)
+		Background(tabBg).Foreground(pal.TextBold)
 	cntInactiveStyle := lipgloss.NewStyle().
 		Background(tabBg).Foreground(pal.TextFaint)
+	tabPadStyle := lipgloss.NewStyle().Background(tabBg)
 
 	type tabDef struct {
 		label string
@@ -167,9 +168,9 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 		count int
 	}
 	tabs := []tabDef{
-		{"1: Dashboard", TabDashboard, tabCounts.Dashboard},
-		{"2: Issues", TabIssues, tabCounts.Issues},
-		{"3: Pull Requests", TabPRs, tabCounts.PRs},
+		{"Dashboard", TabDashboard, tabCounts.Dashboard},
+		{"Issues", TabIssues, tabCounts.Issues},
+		{"Pull Requests", TabPRs, tabCounts.PRs},
 	}
 	var tabRow strings.Builder
 	tabsWidth := 0
@@ -178,15 +179,17 @@ func headerView(activeTab TabID, repo string, issueFilters github.Filters, prFil
 
 		var cntStr string
 		if t.count < 0 {
-			cntStr = " …"
+			cntStr = " […]"
 		} else {
-			cntStr = fmt.Sprintf(" %d", t.count)
+			cntStr = fmt.Sprintf(" [%d]", t.count)
 		}
 
 		var rendered string
 		if isActive {
-			rendered = nameActiveStyle.Render("  "+t.label) +
-				cntActiveStyle.Render(cntStr+"  ")
+			rendered = tabPadStyle.Render("  ") +
+				nameActiveStyle.Render(t.label) +
+				cntActiveStyle.Render(cntStr) +
+				tabPadStyle.Render("  ")
 		} else {
 			rendered = nameInactiveStyle.Render("  "+t.label) +
 				cntInactiveStyle.Render(cntStr+"  ")
