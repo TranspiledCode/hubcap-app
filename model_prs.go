@@ -1026,6 +1026,7 @@ func (m PRsModel) Update(msg tea.Msg) (PRsModel, tea.Cmd) {
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
 				m.loaded = false
+				m.err = nil
 				cmds = append(cmds, m.fetchCmd())
 				cmds = append(cmds, m.spinner.Tick)
 			}

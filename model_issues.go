@@ -962,6 +962,7 @@ func (m IssuesModel) Update(msg tea.Msg) (IssuesModel, tea.Cmd) {
 			case key.Matches(msg, keys.Refresh):
 				m.loading = true
 				m.loaded = false
+				m.err = nil
 				cmds = append(cmds, m.fetchCmd())
 				cmds = append(cmds, m.spinner.Tick)
 			}
